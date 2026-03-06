@@ -1,4 +1,7 @@
 cache/
 out/
 broadcast/
+.venv/
+gas-report.txt
+results.sarif
 .DS_Store

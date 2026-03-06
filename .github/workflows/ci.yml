@@ -1,0 +1,56 @@
+name: Foundry CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundry-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show toolchain
+        run: |
+          forge --version
+          cast --version
+
+      - name: Check formatting
+        run: forge fmt --check
+
+      - name: Run lint
+        run: forge lint
+
+      - name: Build contracts
+        run: forge build --sizes
+
+      - name: Run tests
+        run: forge test -vvv
+
+      - name: Capture gas report
+        run: forge test --gas-report | tee gas-report.txt
+
+      - name: Check canonical artifacts
+        run: |
+          test -f abis/ProgrammableSecrets.abi.json
+          test -f deployments/arbitrum-sepolia.json
+
+      - name: Upload gas report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-report
+          path: gas-report.txt

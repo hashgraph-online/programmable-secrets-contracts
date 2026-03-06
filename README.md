@@ -22,6 +22,7 @@ This project contains the Arbitrum contract for the Programmable Secrets POC.
 cd programmable-secrets-contracts
 forge build
 forge fmt
+forge lint
 forge test -vvv
 forge test --gas-report
 ```
@@ -36,6 +37,38 @@ forge script script/Deploy.s.sol:Deploy \
   --broadcast \
   -vvv
 ```
+
+## GitHub automation
+
+The repository ships with GitHub Actions for CI, security scanning, and manual Sepolia deployment:
+
+- `.github/workflows/ci.yml`
+  Runs `forge fmt --check`, `forge lint`, `forge build --sizes`, `forge test -vvv`, and a gas report on every push to `main` and every pull request.
+- `.github/workflows/security.yml`
+  Runs Slither, uploads SARIF to GitHub code scanning, and fails on any low-or-higher severity finding after excluding the two intentional patterns in this contract:
+  `timestamp` for offer expiry and `low-level-calls` for guarded native-ETH payout.
+- `.github/workflows/deploy-arbitrum-sepolia.yml`
+  Provides a manual `workflow_dispatch` deployment path for Arbitrum Sepolia, writes the canonical deployment artifact, verifies on Sourcify, and attempts Arbiscan verification when an API key is configured.
+- `.github/dependabot.yml`
+  Keeps GitHub Actions dependencies updated weekly.
+
+### Required GitHub secrets
+
+For the `arbitrum-sepolia` deployment environment:
+
+- `ARBITRUM_SEPOLIA_RPC_URL`
+- `DEPLOYER_PRIVATE_KEY`
+
+Optional deploy-time verification secrets:
+
+- `ARBISCAN_API_KEY`
+- `ETHERSCAN_API_KEY`
+
+Compatibility fallback:
+
+- `ETH_PK`
+
+The deploy workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK` for compatibility with the existing local script.
 
 ## Canonical deployment artifact
 

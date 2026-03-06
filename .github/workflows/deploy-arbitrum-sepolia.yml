@@ -1,0 +1,159 @@
+name: Deploy Arbitrum Sepolia
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify_arbiscan:
+        description: Attempt Arbiscan verification when an API key is configured
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-arbitrum-sepolia
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: arbitrum-sepolia
+    env:
+      CHAIN_ID: "421614"
+      NETWORK_NAME: arbitrum-sepolia
+      CONTRACT_PATH: src/ProgrammableSecrets.sol:ProgrammableSecrets
+      COMPILER_VERSION: v0.8.24+commit.e11b9ed9
+      OPTIMIZER_RUNS: "200"
+      DEPLOYMENT_FILE: deployments/arbitrum-sepolia.json
+      BROADCAST_FILE: broadcast/Deploy.s.sol/421614/run-latest.json
+      ARBITRUM_SEPOLIA_RPC_URL: ${{ secrets.ARBITRUM_SEPOLIA_RPC_URL }}
+      DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      ETH_PK: ${{ secrets.ETH_PK }}
+      ARBISCAN_API_KEY: ${{ secrets.ARBISCAN_API_KEY }}
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Validate deploy inputs
+        run: |
+          if [ -z "$ARBITRUM_SEPOLIA_RPC_URL" ]; then
+            echo "Missing ARBITRUM_SEPOLIA_RPC_URL secret" >&2
+            exit 1
+          fi
+          if [ -z "$DEPLOYER_PRIVATE_KEY" ] && [ -z "$ETH_PK" ]; then
+            echo "Missing DEPLOYER_PRIVATE_KEY secret" >&2
+            exit 1
+          fi
+
+      - name: Deploy contract
+        run: |
+          export ETH_PK="${DEPLOYER_PRIVATE_KEY:-$ETH_PK}"
+          forge script script/Deploy.s.sol:Deploy --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL" --broadcast -vvv
+
+      - name: Capture deployment artifact
+        id: deployment
+        run: |
+          contract_address="$(jq -r '.transactions[] | select(.contractName == "ProgrammableSecrets") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
+          deployer_address="$(jq -r '.transactions[] | select(.contractName == "ProgrammableSecrets") | .transaction.from' "$BROADCAST_FILE" | tail -n1)"
+          transaction_hash="$(jq -r '.receipts[] | .transactionHash' "$BROADCAST_FILE" | tail -n1)"
+          block_number_hex="$(jq -r '.receipts[] | .blockNumber' "$BROADCAST_FILE" | tail -n1)"
+          contract_address="$(cast to-check-sum-address "$contract_address")"
+          deployer_address="$(cast to-check-sum-address "$deployer_address")"
+          block_number="$(cast to-dec "$block_number_hex")"
+          abi_checksum="$(shasum -a 256 abis/ProgrammableSecrets.abi.json | awk '{print $1}')"
+          deployed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          jq -n \
+            --argjson chainId "$CHAIN_ID" \
+            --arg network "$NETWORK_NAME" \
+            --arg contractAddress "$contract_address" \
+            --arg deployer "$deployer_address" \
+            --argjson blockNumber "$block_number" \
+            --arg transactionHash "$transaction_hash" \
+            --arg deployedAt "$deployed_at" \
+            --arg abiChecksum "$abi_checksum" \
+            --arg gitCommit "$GITHUB_SHA" \
+            '{
+              chainId: $chainId,
+              network: $network,
+              contractAddress: $contractAddress,
+              deployer: $deployer,
+              blockNumber: $blockNumber,
+              transactionHash: $transactionHash,
+              deployedAt: $deployedAt,
+              abiChecksum: $abiChecksum,
+              gitCommit: $gitCommit
+            }' > "$DEPLOYMENT_FILE"
+          {
+            echo "contract_address=$contract_address"
+            echo "transaction_hash=$transaction_hash"
+            echo "block_number=$block_number"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify on Sourcify
+        run: >
+          forge verify-contract
+          --chain-id "$CHAIN_ID"
+          --watch
+          --verifier sourcify
+          --compiler-version "$COMPILER_VERSION"
+          --num-of-optimizations "$OPTIMIZER_RUNS"
+          "${{ steps.deployment.outputs.contract_address }}"
+          "$CONTRACT_PATH"
+
+      - name: Verify on Arbiscan
+        if: ${{ inputs.verify_arbiscan }}
+        run: |
+          api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
+          if [ -z "$api_key" ]; then
+            echo "Skipping Arbiscan verification because no API key is configured."
+            exit 0
+          fi
+          forge verify-contract \
+            --chain-id "$CHAIN_ID" \
+            --watch \
+            --compiler-version "$COMPILER_VERSION" \
+            --num-of-optimizations "$OPTIMIZER_RUNS" \
+            --etherscan-api-key "$api_key" \
+            "${{ steps.deployment.outputs.contract_address }}" \
+            "$CONTRACT_PATH"
+
+      - name: Commit deployment artifact
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add "$DEPLOYMENT_FILE"
+          if git diff --cached --quiet; then
+            echo "No deployment artifact changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: update arbitrum sepolia deployment artifact"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arbitrum-sepolia-deployment
+          path: |
+            deployments/arbitrum-sepolia.json
+            broadcast/Deploy.s.sol/421614/run-latest.json
+
+      - name: Publish workflow summary
+        run: |
+          {
+            echo "## Arbitrum Sepolia deployment"
+            echo
+            echo "- Contract: \`${{ steps.deployment.outputs.contract_address }}\`"
+            echo "- Transaction: \`${{ steps.deployment.outputs.transaction_hash }}\`"
+            echo "- Block: \`${{ steps.deployment.outputs.block_number }}\`"
+            echo "- Sourcify: https://repo.sourcify.dev/421614/${{ steps.deployment.outputs.contract_address }}"
+            echo "- Arbiscan: https://sepolia.arbiscan.io/address/${{ steps.deployment.outputs.contract_address }}"
+          } >> "$GITHUB_STEP_SUMMARY"
