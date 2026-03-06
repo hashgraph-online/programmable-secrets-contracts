@@ -1,11 +1,11 @@
 {
   "chainId": 421614,
   "network": "arbitrum-sepolia",
-  "contractAddress": "0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f",
-  "deployer": "0x6EE527F338F84833c1c6B91A6Dd9ceA92d294b59",
-  "blockNumber": 247604584,
-  "transactionHash": "0x34d932909d3195569db421c82b85ef5c8c2df7dd12ab8b794bc12cd479963356",
-  "deployedAt": "2026-03-06T20:50:32.375Z",
+  "contractAddress": "0x0eA271390F1e275Bde02BC1087691461497B6650",
+  "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
+  "blockNumber": 247643968,
+  "transactionHash": "0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050",
+  "deployedAt": "2026-03-06T23:52:15Z",
   "abiChecksum": "77090895059bc200089ebc6ef3314af06c32131c9d1bed50961230af429860c3",
-  "gitCommit": "unavailable"
+  "gitCommit": "5d3c1f11caccb7e68f00a9dbd6ef5e4d4344ada7"
 }
