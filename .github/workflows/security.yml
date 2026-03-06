@@ -45,8 +45,26 @@ jobs:
           --fail-low
           --sarif results.sarif
 
-      - name: Upload SARIF
+      - name: Upload SARIF artifact
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-sarif
+          path: results.sarif
+
+      - name: Upload SARIF to GitHub code scanning
+        if: ${{ always() && (!github.event.repository.private || vars.ENABLE_GHAS_CODE_SCANNING == 'true') }}
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
+
+      - name: Record code scanning upload status
+        if: ${{ always() }}
+        run: |
+          if [ "${{ github.event.repository.private }}" = "true" ] && [ "${{ vars.ENABLE_GHAS_CODE_SCANNING }}" != "true" ]; then
+            echo "GitHub code scanning upload skipped because this repository is private and GitHub Advanced Security is not enabled." >> "$GITHUB_STEP_SUMMARY"
+            echo "Set the repository variable ENABLE_GHAS_CODE_SCANNING=true after enabling GitHub Advanced Security to publish SARIF directly to GitHub code scanning." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "GitHub code scanning upload attempted." >> "$GITHUB_STEP_SUMMARY"
+          fi

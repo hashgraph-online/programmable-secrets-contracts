@@ -45,7 +45,7 @@ The repository ships with GitHub Actions for CI, security scanning, and manual S
 - `.github/workflows/ci.yml`
   Runs `forge fmt --check`, `forge lint`, `forge build --sizes`, `forge test -vvv`, and a gas report on every push to `main` and every pull request.
 - `.github/workflows/security.yml`
-  Runs Slither, uploads SARIF to GitHub code scanning, and fails on any low-or-higher severity finding after excluding the two intentional patterns in this contract:
+  Runs Slither, uploads a SARIF artifact on every run, attempts GitHub code scanning upload when the repository supports it, and fails on any low-or-higher severity finding after excluding the two intentional patterns in this contract:
   `timestamp` for offer expiry and `low-level-calls` for guarded native-ETH payout.
 - `.github/workflows/deploy-arbitrum-sepolia.yml`
   Provides a manual `workflow_dispatch` deployment path for Arbitrum Sepolia, writes the canonical deployment artifact, verifies on Sourcify, and attempts Arbiscan verification when an API key is configured.
@@ -69,6 +69,12 @@ Compatibility fallback:
 - `ETH_PK`
 
 The deploy workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK` for compatibility with the existing local script.
+
+Optional repository variable for native GitHub code scanning on private repos:
+
+- `ENABLE_GHAS_CODE_SCANNING=true`
+
+Leave that variable unset for private repos without GitHub Advanced Security. In that mode the security workflow still uploads `results.sarif` as a build artifact so the Slither report remains inspectable.
 
 ## Canonical deployment artifact
 
