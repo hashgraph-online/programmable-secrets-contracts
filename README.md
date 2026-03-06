@@ -132,5 +132,9 @@ Validated against the live contract on `2026-03-06`.
 - Sourcify contract page: `https://repo.sourcify.dev/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f`
 - Sourcify metadata: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f/metadata.json`
 - Sourcify source file: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f/sources/src/ProgrammableSecrets.sol`
-- Arbiscan-native verification is still pending.
-- The current environment does not provide `ARBISCAN_API_KEY` or `ETHERSCAN_API_KEY`, and Arbiscan's browser UI is Cloudflare-gated in automation, so Arbiscan-specific verification could not be completed in this run.
+- Arbiscan-native verification is complete for `https://sepolia.arbiscan.io/address/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f#code`.
+- Verified via Foundry and confirmed through the Etherscan V2 API with:
+  - contract name `ProgrammableSecrets`
+  - compiler `v0.8.24+commit.e11b9ed9`
+  - optimizer enabled
+  - non-empty published source
