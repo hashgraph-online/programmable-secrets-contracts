@@ -119,13 +119,14 @@ After any ABI change:
 
 - Foundry bootstrap complete
 - Canonical checked-in ABI added at `abis/ProgrammableSecrets.abi.json`
-- Arbitrum Sepolia deployment live at `0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f`
-- Deployment tx: `0x34d932909d3195569db421c82b85ef5c8c2df7dd12ab8b794bc12cd479963356`
+- Latest GitHub Actions Arbitrum Sepolia deployment live at `0x0eA271390F1e275Bde02BC1087691461497B6650`
+- Latest deployment tx: `0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050`
+- Canonical deployment artifact updated in commit `d99bc1c`
 - Gas report captured
 
-## Live Sepolia rehearsal
+## Historical browser rehearsal
 
-Validated against the live contract on `2026-03-06`.
+Validated on `2026-03-06` against the earlier Sepolia deployment used for the portal and broker browser walkthrough.
 
 - Example offer id: `1`
 - Offer creation tx: `0x189b64468ed7c246e0e1007d7c9d5024ba8ad93a41c68b416184f281693650d9`
@@ -136,10 +137,10 @@ Validated against the live contract on `2026-03-06`.
 ## Explorer verification
 
 - Public source verification is complete on Sourcify as an `exact_match`.
-- Sourcify contract page: `https://repo.sourcify.dev/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f`
-- Sourcify metadata: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f/metadata.json`
-- Sourcify source file: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f/sources/src/ProgrammableSecrets.sol`
-- Arbiscan-native verification is complete for `https://sepolia.arbiscan.io/address/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f#code`.
+- Sourcify contract page: `https://repo.sourcify.dev/421614/0x0eA271390F1e275Bde02BC1087691461497B6650`
+- Sourcify metadata: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0eA271390F1e275Bde02BC1087691461497B6650/metadata.json`
+- Sourcify source file: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0eA271390F1e275Bde02BC1087691461497B6650/sources/src/ProgrammableSecrets.sol`
+- Arbiscan-native verification is complete for `https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code`.
 - Verified via Foundry and confirmed through the Etherscan V2 API with:
   - contract name `ProgrammableSecrets`
   - compiler `v0.8.24+commit.e11b9ed9`
