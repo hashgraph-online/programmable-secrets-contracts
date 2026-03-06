@@ -1,0 +1,103 @@
+# Programmable Secrets Contracts
+
+This project contains the Arbitrum contract for the Programmable Secrets POC.
+
+## Layout
+
+- `src/ProgrammableSecrets.sol`: core offer + purchase contract
+- `src/Errors.sol`: custom errors
+- `src/Events.sol`: event definitions
+- `script/Deploy.s.sol`: deployment script
+- `script/Verify.s.sol`: verification helper placeholder
+- `test/ProgrammableSecrets.t.sol`: unit and fuzz tests
+- `deployments/arbitrum-sepolia.json`: canonical checked-in deployment artifact
+
+## Requirements
+
+- Foundry with `forge`
+
+## Local commands
+
+```bash
+cd programmable-secrets-contracts
+forge build
+forge fmt
+forge test -vvv
+forge test --gas-report
+```
+
+## Deploy to Arbitrum Sepolia
+
+```bash
+cd programmable-secrets-contracts
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url "https://sepolia-rollup.arbitrum.io/rpc" \
+  --private-key "$DEPLOYER_PRIVATE_KEY" \
+  --broadcast \
+  -vvv
+```
+
+## Canonical deployment artifact
+
+The checked-in deployment artifact path is:
+
+- `deployments/arbitrum-sepolia.json`
+
+Required fields:
+
+- `chainId`
+- `network`
+- `contractAddress`
+- `deployer`
+- `blockNumber`
+- `transactionHash`
+- `deployedAt`
+- `abiChecksum`
+- `gitCommit`
+
+Update that file immediately after any successful Sepolia deployment.
+
+## Current measured gas
+
+Latest `forge test --gas-report` output:
+
+- Deployment cost: `793362`
+- Deployment size: `3355`
+- `createOffer` average gas: `229407`
+- `purchase` average gas: `66717`
+- `updateOffer` average gas: `32349`
+
+## ABI handoff
+
+After any ABI change:
+
+1. rebuild this project
+2. refresh `abis/ProgrammableSecrets.abi.json`
+3. sync the ABI/address into `registry-broker` and `hol-points-portal` before backend or UI integration proceeds
+
+## Current status
+
+- Foundry bootstrap complete
+- Canonical checked-in ABI added at `abis/ProgrammableSecrets.abi.json`
+- Arbitrum Sepolia deployment live at `0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f`
+- Deployment tx: `0x34d932909d3195569db421c82b85ef5c8c2df7dd12ab8b794bc12cd479963356`
+- Gas report captured
+
+## Live Sepolia rehearsal
+
+Validated against the live contract on `2026-03-06`.
+
+- Example offer id: `1`
+- Offer creation tx: `0x189b64468ed7c246e0e1007d7c9d5024ba8ad93a41c68b416184f281693650d9`
+- Purchase tx: `0x78df1f2ed03b49b0d8cbcf7af941a047a1afd51f19fed3c72008b309d4ab137e`
+- Key issue latency: `1460 ms`
+- Buyer plaintext hash after decrypt: `0x2f1ff5d4604576427dc0f8b691e974d208981f031fe7b3abb86a3f048f4bff3a`
+
+## Explorer verification
+
+- Public source verification is complete on Sourcify as an `exact_match`.
+- Sourcify contract page: `https://repo.sourcify.dev/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f`
+- Sourcify metadata: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f/metadata.json`
+- Sourcify source file: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0c9cf58751ED2Dd199FBe42a777B96c5c8Bc8b8f/sources/src/ProgrammableSecrets.sol`
+- Arbiscan-native verification is still pending.
+- The current environment does not provide `ARBISCAN_API_KEY` or `ETHERSCAN_API_KEY`, and Arbiscan's browser UI is Cloudflare-gated in automation, so Arbiscan-specific verification could not be completed in this run.
