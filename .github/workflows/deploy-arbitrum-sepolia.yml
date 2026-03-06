@@ -56,7 +56,11 @@ jobs:
 
       - name: Deploy contract
         run: |
-          export ETH_PK="${DEPLOYER_PRIVATE_KEY:-$ETH_PK}"
+          deployer_key="${DEPLOYER_PRIVATE_KEY:-$ETH_PK}"
+          case "$deployer_key" in
+            0x*) export ETH_PK="$deployer_key" ;;
+            *) export ETH_PK="0x$deployer_key" ;;
+          esac
           forge script script/Deploy.s.sol:Deploy --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL" --broadcast -vvv
 
       - name: Capture deployment artifact

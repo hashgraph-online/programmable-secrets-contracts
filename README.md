@@ -69,6 +69,7 @@ Compatibility fallback:
 - `ETH_PK`
 
 The deploy workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK` for compatibility with the existing local script.
+Either secret may be stored with or without a leading `0x`; the workflow normalizes the key before running Foundry.
 
 Optional repository variable for native GitHub code scanning on private repos:
 
