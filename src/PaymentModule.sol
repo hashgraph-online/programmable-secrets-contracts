@@ -23,11 +23,8 @@ import {
 } from "./Errors.sol";
 import {PolicyVault} from "./PolicyVault.sol";
 import {AccessReceipt} from "./AccessReceipt.sol";
+import {IIdentityRegistry} from "./IIdentityRegistry.sol";
 import {UpgradeableReentrancyGuard} from "./UpgradeableReentrancyGuard.sol";
-
-interface IERC721OwnershipRegistry {
-    function ownerOf(uint256 tokenId) external view returns (address);
-}
 
 contract PaymentModule is
     Initializable,
@@ -220,7 +217,7 @@ contract PaymentModule is
         if (keccak256(bytes(buyerUaid)) != policy.requiredBuyerUaidHash) {
             revert BuyerUaidMismatch();
         }
-        if (IERC721OwnershipRegistry(policy.identityRegistry).ownerOf(policy.agentId) != msg.sender) {
+        if (IIdentityRegistry(policy.identityRegistry).ownerOf(policy.agentId) != msg.sender) {
             revert BuyerDoesNotOwnRequiredAgent();
         }
     }

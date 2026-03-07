@@ -8,6 +8,7 @@ error InvalidPayoutAddress();
 error InvalidPolicyType();
 error InvalidIdentityRegistry();
 error InvalidAgentId();
+error AgentIdentityNotFound();
 error InvalidRequiredBuyerUaid();
 error PaymentFailed();
 error NotPolicyProvider();

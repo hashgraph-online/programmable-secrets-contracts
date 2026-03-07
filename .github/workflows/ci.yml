@@ -36,7 +36,7 @@ jobs:
         run: forge lint
 
       - name: Build contracts
-        run: forge build --sizes
+        run: forge build --sizes --skip script
 
       - name: Run tests
         run: forge test -vvv

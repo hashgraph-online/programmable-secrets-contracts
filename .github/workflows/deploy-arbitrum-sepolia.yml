@@ -31,7 +31,6 @@ jobs:
     environment: arbitrum-sepolia
     env:
       ACCESS_RECEIPT_CONTRACT_PATH: src/AccessReceipt.sol:AccessReceipt
-      AGENT_IDENTITY_REGISTRY_CONTRACT_PATH: src/AgentIdentityRegistry.sol:AgentIdentityRegistry
       PAYMENT_MODULE_CONTRACT_PATH: src/PaymentModule.sol:PaymentModule
       POLICY_VAULT_CONTRACT_PATH: src/PolicyVault.sol:PolicyVault
       PROXY_CONTRACT_PATH: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy"
@@ -59,6 +58,7 @@ jobs:
             arbitrum-sepolia)
               echo "CHAIN_ID=421614" >> "$GITHUB_ENV"
               echo "NETWORK_NAME=arbitrum-sepolia" >> "$GITHUB_ENV"
+              echo "IDENTITY_REGISTRY_ADDRESS=0x8004A818BFB912233c491871b3d84c89A494BD9e" >> "$GITHUB_ENV"
               echo "DEPLOYMENT_FILE=deployments/arbitrum-sepolia.json" >> "$GITHUB_ENV"
               echo "BROADCAST_FILE=broadcast/Deploy.s.sol/421614/run-latest.json" >> "$GITHUB_ENV"
               echo "RPC_URL=$ARBITRUM_SEPOLIA_RPC_URL" >> "$GITHUB_ENV"
@@ -77,6 +77,7 @@ jobs:
             robinhood-testnet)
               echo "CHAIN_ID=46630" >> "$GITHUB_ENV"
               echo "NETWORK_NAME=robinhood-testnet" >> "$GITHUB_ENV"
+              echo "IDENTITY_REGISTRY_ADDRESS=0x0000000000000000000000000000000000000000" >> "$GITHUB_ENV"
               echo "DEPLOYMENT_FILE=deployments/robinhood-testnet.json" >> "$GITHUB_ENV"
               echo "BROADCAST_FILE=broadcast/Deploy.s.sol/46630/run-latest.json" >> "$GITHUB_ENV"
               echo "RPC_URL=$ROBINHOOD_TESTNET_RPC_URL" >> "$GITHUB_ENV"
@@ -122,6 +123,7 @@ jobs:
           echo "ETH_PK=$ETH_PK" >> "$GITHUB_ENV"
           echo "DEPLOYER_ADDRESS=$deployer_address" >> "$GITHUB_ENV"
           echo "CONTRACT_OWNER=$contract_owner" >> "$GITHUB_ENV"
+          echo "IDENTITY_REGISTRY_ADDRESS=$IDENTITY_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
 
       - name: Deploy contract stack
         run: |
@@ -135,11 +137,9 @@ jobs:
           access_receipt_address="$(jq -r '.transactions[] | select(.contractName == "AccessReceipt") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
           policy_vault_proxy="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
           payment_module_proxy="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
-          agent_identity_registry_address="$(jq -r '.transactions[] | select(.contractName == "AgentIdentityRegistry") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
           policy_vault_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .hash' "$BROADCAST_FILE" | head -n1)"
           payment_module_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .hash' "$BROADCAST_FILE" | tail -n1)"
           access_receipt_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "AccessReceipt") | .hash' "$BROADCAST_FILE" | head -n1)"
-          agent_identity_registry_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "AgentIdentityRegistry") | .hash' "$BROADCAST_FILE" | head -n1)"
           receipt_configuration_tx="$(jq -r '.transactions[] | select(.contractName == null and .function == "setPaymentModule(address)") | .hash' "$BROADCAST_FILE" | tail -n1)"
           final_transaction_hash="$(jq -r '.receipts[] | .transactionHash' "$BROADCAST_FILE" | tail -n1)"
           block_number_hex="$(jq -r '.receipts[] | .blockNumber' "$BROADCAST_FILE" | tail -n1)"
@@ -148,12 +148,12 @@ jobs:
           access_receipt_address="$(cast to-check-sum-address "$access_receipt_address")"
           policy_vault_proxy="$(cast to-check-sum-address "$policy_vault_proxy")"
           payment_module_proxy="$(cast to-check-sum-address "$payment_module_proxy")"
-          agent_identity_registry_address="$(cast to-check-sum-address "$agent_identity_registry_address")"
+          agent_identity_registry_address="$(cast to-check-sum-address "$IDENTITY_REGISTRY_ADDRESS")"
           deployer_address="$(cast to-check-sum-address "$DEPLOYER_ADDRESS")"
           contract_owner="$(cast to-check-sum-address "$CONTRACT_OWNER")"
           block_number="$(cast to-dec "$block_number_hex")"
           access_receipt_abi_checksum="$(shasum -a 256 abis/AccessReceipt.abi.json | awk '{print $1}')"
-          agent_identity_registry_abi_checksum="$(shasum -a 256 abis/AgentIdentityRegistry.abi.json | awk '{print $1}')"
+          identity_registry_abi_checksum="$(shasum -a 256 abis/IdentityRegistry.abi.json | awk '{print $1}')"
           payment_module_abi_checksum="$(shasum -a 256 abis/PaymentModule.abi.json | awk '{print $1}')"
           policy_vault_abi_checksum="$(shasum -a 256 abis/PolicyVault.abi.json | awk '{print $1}')"
           deployed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -175,10 +175,9 @@ jobs:
             --arg policyVaultDeployTx "$policy_vault_deploy_tx" \
             --arg paymentModuleDeployTx "$payment_module_deploy_tx" \
             --arg accessReceiptDeployTx "$access_receipt_deploy_tx" \
-            --arg agentIdentityRegistryDeployTx "$agent_identity_registry_deploy_tx" \
             --arg receiptConfigurationTx "$receipt_configuration_tx" \
             --arg accessReceiptAbiChecksum "$access_receipt_abi_checksum" \
-            --arg agentIdentityRegistryAbiChecksum "$agent_identity_registry_abi_checksum" \
+            --arg identityRegistryAbiChecksum "$identity_registry_abi_checksum" \
             --arg paymentModuleAbiChecksum "$payment_module_abi_checksum" \
             --arg policyVaultAbiChecksum "$policy_vault_abi_checksum" \
             '{
@@ -210,10 +209,10 @@ jobs:
                   abiFile: "abis/AccessReceipt.abi.json",
                   abiChecksum: $accessReceiptAbiChecksum
                 },
-                agentIdentityRegistry: {
+                identityRegistry: {
                   address: $agentIdentityRegistryAddress,
-                  abiFile: "abis/AgentIdentityRegistry.abi.json",
-                  abiChecksum: $agentIdentityRegistryAbiChecksum
+                  abiFile: "abis/IdentityRegistry.abi.json",
+                  abiChecksum: $identityRegistryAbiChecksum
                 }
               },
               entrypoints: {
@@ -226,7 +225,6 @@ jobs:
                 policyVaultDeployment: $policyVaultDeployTx,
                 paymentModuleDeployment: $paymentModuleDeployTx,
                 accessReceiptDeployment: $accessReceiptDeployTx,
-                agentIdentityRegistryDeployment: $agentIdentityRegistryDeployTx,
                 receiptConfiguration: $receiptConfigurationTx
               }
             }' > "$DEPLOYMENT_FILE"
@@ -297,43 +295,6 @@ jobs:
                 --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
                 "${{ steps.deployment.outputs.policy_vault_implementation }}" \
                 "$POLICY_VAULT_CONTRACT_PATH"
-              ;;
-            *)
-              echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Verify AgentIdentityRegistry on native explorer
-        if: ${{ inputs.verify_native_explorer }}
-        run: |
-          case "$NATIVE_VERIFIER" in
-            etherscan)
-              api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
-              if [ -z "$api_key" ]; then
-                echo "Skipping native explorer verification because no API key is configured."
-                exit 0
-              fi
-              forge verify-contract \
-                --chain-id "$CHAIN_ID" \
-                --watch \
-                --verifier etherscan \
-                --etherscan-api-key "$api_key" \
-                --compiler-version "$COMPILER_VERSION" \
-                --num-of-optimizations "$OPTIMIZER_RUNS" \
-                "${{ steps.deployment.outputs.agent_identity_registry_address }}" \
-                "$AGENT_IDENTITY_REGISTRY_CONTRACT_PATH"
-              ;;
-            blockscout)
-              forge verify-contract \
-                --chain-id "$CHAIN_ID" \
-                --watch \
-                --verifier blockscout \
-                --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
-                --compiler-version "$COMPILER_VERSION" \
-                --num-of-optimizations "$OPTIMIZER_RUNS" \
-                "${{ steps.deployment.outputs.agent_identity_registry_address }}" \
-                "$AGENT_IDENTITY_REGISTRY_CONTRACT_PATH"
               ;;
             *)
               echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2

@@ -4,8 +4,10 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {IIdentityRegistry} from "./IIdentityRegistry.sol";
 import {PolicyVaultEvents} from "./Events.sol";
 import {
+    AgentIdentityNotFound,
     DatasetInactive,
     DatasetNotFound,
     InvalidAgentId,
@@ -412,7 +414,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         }
     }
 
-    function _validatePolicyRequirements(CreatePolicyConfig memory config) internal pure {
+    function _validatePolicyRequirements(CreatePolicyConfig memory config) internal view {
         if (config.policyType != POLICY_TYPE_UAID_ERC8004) {
             return;
         }
@@ -424,6 +426,13 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         }
         if (config.agentId == 0) {
             revert InvalidAgentId();
+        }
+        try IIdentityRegistry(config.identityRegistry).ownerOf(config.agentId) returns (address owner) {
+            if (owner == address(0)) {
+                revert AgentIdentityNotFound();
+            }
+        } catch {
+            revert AgentIdentityNotFound();
         }
     }
 }

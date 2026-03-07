@@ -4,38 +4,25 @@ pragma solidity ^0.8.24;
 import {Script} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {AccessReceipt} from "../src/AccessReceipt.sol";
-import {AgentIdentityRegistry} from "../src/AgentIdentityRegistry.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 
 contract Deploy is Script {
-    function run()
-        external
-        returns (
-            PolicyVault deployedPolicyVault,
-            PaymentModule deployedPaymentModule,
-            AccessReceipt deployedAccessReceipt,
-            AgentIdentityRegistry deployedAgentIdentityRegistry,
-            address policyVaultImplementation,
-            address paymentModuleImplementation,
-            address deployer,
-            address requestedOwner
-        )
-    {
+    function run() external {
         uint256 deployerPrivateKey = vm.envUint("ETH_PK");
-        deployer = address(uint160(vm.envUint("DEPLOYER_ADDRESS")));
-        requestedOwner = address(uint160(vm.envUint("CONTRACT_OWNER")));
+        address deployer = address(uint160(vm.envUint("DEPLOYER_ADDRESS")));
+        address requestedOwner = address(uint160(vm.envUint("CONTRACT_OWNER")));
+        address identityRegistryAddress = address(uint160(vm.envUint("IDENTITY_REGISTRY_ADDRESS")));
 
         vm.startBroadcast(deployerPrivateKey);
-        policyVaultImplementation = address(new PolicyVault());
-        deployedPolicyVault = PolicyVault(
+        address policyVaultImplementation = address(new PolicyVault());
+        PolicyVault deployedPolicyVault = PolicyVault(
             address(new ERC1967Proxy(policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))))
         );
-        deployedAccessReceipt = new AccessReceipt(deployer);
-        deployedAgentIdentityRegistry = new AgentIdentityRegistry(deployer);
+        AccessReceipt deployedAccessReceipt = new AccessReceipt(deployer);
 
-        paymentModuleImplementation = address(new PaymentModule());
-        deployedPaymentModule = PaymentModule(
+        address paymentModuleImplementation = address(new PaymentModule());
+        PaymentModule deployedPaymentModule = PaymentModule(
             address(
                 new ERC1967Proxy(
                     paymentModuleImplementation,
@@ -52,8 +39,8 @@ contract Deploy is Script {
             deployedPolicyVault.transferOwnership(requestedOwner);
             deployedPaymentModule.transferOwnership(requestedOwner);
             deployedAccessReceipt.transferOwnership(requestedOwner);
-            deployedAgentIdentityRegistry.transferOwnership(requestedOwner);
         }
+        identityRegistryAddress;
         vm.stopBroadcast();
     }
 }

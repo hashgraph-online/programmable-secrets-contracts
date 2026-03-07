@@ -6,6 +6,7 @@ import {AccessReceipt} from "../src/AccessReceipt.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {
+    AgentIdentityNotFound,
     BuyerDoesNotOwnRequiredAgent,
     BuyerUaidMismatch,
     BuyerUaidRequired,
@@ -326,6 +327,26 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
             keccak256(bytes(REQUIRED_BUYER_UAID)),
             address(agentIdentityRegistry),
             0,
+            emptyAllowlist
+        );
+    }
+
+    function testCreateUaidBoundPolicyRejectsUnknownExternalIdentity() public {
+        uint256 datasetId = _registerDataset();
+        address[] memory emptyAllowlist = new address[](0);
+        vm.prank(PROVIDER);
+        vm.expectRevert(AgentIdentityNotFound.selector);
+        policyVault.createUaidBoundPolicy(
+            datasetId,
+            PAYOUT,
+            address(0),
+            1 ether,
+            0,
+            false,
+            POLICY_METADATA_HASH,
+            keccak256(bytes(REQUIRED_BUYER_UAID)),
+            address(agentIdentityRegistry),
+            999,
             emptyAllowlist
         );
     }

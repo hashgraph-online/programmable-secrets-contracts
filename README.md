@@ -8,7 +8,7 @@ This package is the contract source of truth for:
 - `PolicyVault`
 - `PaymentModule`
 - `AccessReceipt`
-- `AgentIdentityRegistry`
+- external `IdentityRegistry` integration for UAID-gated policies
 - deployment automation
 - checked-in ABIs
 - testnet deployment manifests
@@ -20,7 +20,7 @@ This package is the contract source of truth for:
 | `PolicyVault` | Stores provider-owned datasets plus attached policy records, including dataset discovery indexes and supported policy types. |
 | `PaymentModule` | Validates purchase conditions, settles native ETH, mints the access receipt, and resolves active entitlement state for policies or datasets. |
 | `AccessReceipt` | Non-transferable ERC-721 entitlement proving a buyer satisfied a specific dataset policy. |
-| `AgentIdentityRegistry` | ERC-8004-style identity registry used to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
+| external `IdentityRegistry` | ERC-8004 registry address referenced by UAID-gated policies to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
 
 The intended app entrypoints are:
 - dataset registration and policy creation through `PolicyVault`

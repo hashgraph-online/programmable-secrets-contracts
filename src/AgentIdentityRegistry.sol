@@ -5,6 +5,8 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC721URIStorage} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+/// @notice Test-only ERC-8004-style registry mock used by Foundry coverage.
+/// @dev Production deployments point policies at an external IdentityRegistry address instead of deploying this contract.
 contract AgentIdentityRegistry is ERC721URIStorage, Ownable {
     struct Agent {
         uint256 agentId;
