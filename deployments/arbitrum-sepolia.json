@@ -1,11 +1,42 @@
 {
   "chainId": 421614,
   "network": "arbitrum-sepolia",
-  "contractAddress": "0x0eA271390F1e275Bde02BC1087691461497B6650",
   "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
-  "blockNumber": 247643968,
-  "transactionHash": "0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050",
-  "deployedAt": "2026-03-06T23:52:15Z",
-  "abiChecksum": "77090895059bc200089ebc6ef3314af06c32131c9d1bed50961230af429860c3",
-  "gitCommit": "5d3c1f11caccb7e68f00a9dbd6ef5e4d4344ada7"
+  "requestedOwner": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
+  "blockNumber": 247731437,
+  "transactionHash": "0x5a07d4780c343f6b2f6418c4b98cd49d6b9f223c52f98d2bf82080a2c4738e1a",
+  "deployedAt": "2026-03-07T06:27:53Z",
+  "gitCommit": "a7215ae21d870ea8e7f902198d9886cb322664ad",
+  "contracts": {
+    "policyVault": {
+      "proxyAddress": "0xC0Ae57cA625B6e856A57396787606E1e34F19d82",
+      "implementationAddress": "0x6231e0388d48aE3fCF500EA4AE0aC80c8056b856",
+      "proxyKind": "uups-erc1967",
+      "abiFile": "abis/PolicyVault.abi.json",
+      "abiChecksum": "549e0a957372a510afe0a2d73940512b1415ebdeab0cd27565023f981a11b08f"
+    },
+    "paymentModule": {
+      "proxyAddress": "0xb050DE13A7B7ecf3C339E84510f1fe641933E292",
+      "implementationAddress": "0x0faaA50e20CE2eDC483921CB5CBe37Aacfc5c89b",
+      "proxyKind": "uups-erc1967",
+      "abiFile": "abis/PaymentModule.abi.json",
+      "abiChecksum": "34d7a0c250de0272d8eb9ff363cc838d513e8d5f702cb3b052d02d8ca5d24e4d"
+    },
+    "accessReceipt": {
+      "address": "0x1e77b23479F7b55730C2E49d041c321742136540",
+      "abiFile": "abis/AccessReceipt.abi.json",
+      "abiChecksum": "3f31353da85200f6ef0247ff08dad04e1b0ca90bcfdb16043c0cbbd3b274f53c"
+    }
+  },
+  "entrypoints": {
+    "policyVaultAddress": "0xC0Ae57cA625B6e856A57396787606E1e34F19d82",
+    "paymentModuleAddress": "0xb050DE13A7B7ecf3C339E84510f1fe641933E292",
+    "accessReceiptAddress": "0x1e77b23479F7b55730C2E49d041c321742136540"
+  },
+  "transactions": {
+    "policyVaultDeployment": "0x362a29a2aec2c343376da5e5985054ed11585261d20709101a33ccba07da0787",
+    "paymentModuleDeployment": "0x530591757cc46318f7bf26349635b085bcaf0a5d2d342ad589f5f53cf68cd161",
+    "accessReceiptDeployment": "0xf3e2caa3b2aa416488ec5179ded4778e9749798cefb58672477482cf92be127b",
+    "receiptConfiguration": ""
+  }
 }
