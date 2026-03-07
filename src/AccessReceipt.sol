@@ -8,6 +8,9 @@ import {AccessReceiptEvents} from "./Events.sol";
 import {AlreadyHasReceipt, InvalidModuleAddress, NotPaymentModule, ReceiptNonTransferable} from "./Errors.sol";
 
 contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
+    string internal constant RECEIPT_METADATA_URI =
+        "ipfs://bafkreibw3osbcrk7w522tcjuz5a4ihffd3bfbjkwmfso5esxyfml2cfal4";
+
     struct Receipt {
         uint256 policyId;
         uint256 datasetId;
@@ -105,6 +108,13 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
             revert ERC721NonexistentToken(receiptTokenId);
         }
         return receipts[receiptTokenId];
+    }
+
+    function tokenURI(uint256 receiptTokenId) public view override returns (string memory) {
+        if (_ownerOf(receiptTokenId) == address(0)) {
+            revert ERC721NonexistentToken(receiptTokenId);
+        }
+        return RECEIPT_METADATA_URI;
     }
 
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {

@@ -8,3 +8,4 @@ results.sarif
 .env*
 node_modules/
 *.tgz
+node_modules

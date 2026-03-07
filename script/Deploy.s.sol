@@ -16,6 +16,7 @@ contract Deploy is Script {
     bytes32 internal constant DEFAULT_PAYMENT_MODULE_PROXY_SALT =
         keccak256("programmable-secrets-payment-module-proxy-v1");
     bytes32 internal constant DEFAULT_ACCESS_RECEIPT_SALT = keccak256("programmable-secrets-access-receipt-v1");
+    bytes32 internal constant DEFAULT_ACCESS_RECEIPT_V2_SALT = keccak256("programmable-secrets-access-receipt-v2");
 
     function run() external virtual {
         uint256 deployerPrivateKey = vm.envUint("ETH_PK");
@@ -105,5 +106,19 @@ contract DeployCreate2 is Deploy {
         address requestedOwner = address(uint160(vm.envUint("CONTRACT_OWNER")));
         address identityRegistryAddress = address(uint160(vm.envUint("IDENTITY_REGISTRY_ADDRESS")));
         _deploy(deployerPrivateKey, deployer, requestedOwner, identityRegistryAddress, true);
+    }
+}
+
+contract RotateAccessReceiptCreate2 is Deploy {
+    function run() external override {
+        uint256 deployerPrivateKey = vm.envUint("ETH_PK");
+        address deployer = address(uint160(vm.envUint("DEPLOYER_ADDRESS")));
+        address paymentModuleAddress = address(uint160(vm.envUint("PAYMENT_MODULE_ADDRESS")));
+
+        vm.startBroadcast(deployerPrivateKey);
+        AccessReceipt deployedAccessReceipt = new AccessReceipt{salt: DEFAULT_ACCESS_RECEIPT_V2_SALT}(deployer);
+        deployedAccessReceipt.setPaymentModule(paymentModuleAddress);
+        PaymentModule(paymentModuleAddress).setAccessReceipt(address(deployedAccessReceipt));
+        vm.stopBroadcast();
     }
 }
