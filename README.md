@@ -101,11 +101,18 @@ Update that file immediately after any successful Sepolia deployment.
 
 Latest `forge test --gas-report` output:
 
-- Deployment cost: `793362`
-- Deployment size: `3355`
-- `createOffer` average gas: `229407`
-- `purchase` average gas: `66717`
-- `updateOffer` average gas: `32349`
+- Deployment cost: `836945`
+- Deployment size: `3556`
+- `createOffer` average gas: `195419`
+- `purchase` average gas: `65721`
+- `updateOffer` average gas: `33365`
+
+## Hardening notes
+
+- Offer creation and updates now reject zero integrity hashes for `ciphertextHash`, `keyCommitment`, `metadataHash`, and `providerUaidHash`.
+- Offer expiries now use strict future-only validation, and purchases revert at the exact `expiresAt` timestamp.
+- Internal offer storage is packed into `7` storage slots while the external `getOffer` ABI remains unchanged.
+- Security coverage includes payout rejection handling and an explicit payout-contract reentrancy regression test.
 
 ## ABI handoff
 

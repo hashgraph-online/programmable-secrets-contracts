@@ -9,7 +9,9 @@ import {
     OfferExpired,
     AlreadyPurchased,
     InvalidPrice,
+    InvalidExpiry,
     InvalidPaymentToken,
+    InvalidOfferHashes,
     PaymentFailed,
     ReentrancyDetected
 } from "./Errors.sol";
@@ -29,22 +31,38 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         bytes32 providerUaidHash;
     }
 
-    uint256 public offerCount;
-
-    mapping(uint256 => Offer) internal offers;
-    mapping(uint256 => mapping(address => uint64)) public purchasedAt;
-
-    uint256 private unlocked = 1;
-
-    modifier nonReentrant() {
-        if (unlocked != 1) {
-            revert ReentrancyDetected();
-        }
-        unlocked = 2;
-        _;
-        unlocked = 1;
+    struct PackedOffer {
+        address provider;
+        uint96 price;
+        address payout;
+        uint64 createdAt;
+        bool active;
+        address paymentToken;
+        uint64 expiresAt;
+        bytes32 ciphertextHash;
+        bytes32 keyCommitment;
+        bytes32 metadataHash;
+        bytes32 providerUaidHash;
     }
 
+    uint256 private constant NOT_ENTERED = 1;
+    uint256 private constant ENTERED = 2;
+
+    uint256 public offerCount;
+
+    mapping(uint256 => PackedOffer) internal offers;
+    mapping(uint256 => mapping(address => uint64)) public purchasedAt;
+
+    uint256 private unlocked = NOT_ENTERED;
+
+    modifier nonReentrant() {
+        _nonReentrantBefore();
+        _;
+        _nonReentrantAfter();
+    }
+
+    /// @notice Creates a new programmable secret offer with immutable integrity anchors.
+    /// @dev Hash commitments must be non-zero and expiries must be in the future when set.
     function createOffer(
         address payout,
         address paymentToken,
@@ -61,17 +79,22 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         if (price == 0) {
             revert InvalidPrice();
         }
+        _validateExpiry(expiresAt);
+        _validateOfferHashes(ciphertextHash, keyCommitment, metadataHash, providerUaidHash);
 
         offerId = ++offerCount;
 
-        offers[offerId] = Offer({
+        address normalizedPayout = payout == address(0) ? msg.sender : payout;
+        uint64 createdAt = uint64(block.timestamp);
+
+        offers[offerId] = PackedOffer({
             provider: msg.sender,
-            payout: payout == address(0) ? msg.sender : payout,
-            paymentToken: paymentToken,
             price: price,
-            createdAt: uint64(block.timestamp),
-            expiresAt: expiresAt,
+            payout: normalizedPayout,
+            createdAt: createdAt,
             active: true,
+            paymentToken: paymentToken,
+            expiresAt: expiresAt,
             ciphertextHash: ciphertextHash,
             keyCommitment: keyCommitment,
             metadataHash: metadataHash,
@@ -81,7 +104,7 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         emit OfferCreated(
             offerId,
             msg.sender,
-            offers[offerId].payout,
+            normalizedPayout,
             paymentToken,
             price,
             expiresAt,
@@ -92,16 +115,21 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         );
     }
 
+    /// @notice Updates mutable offer parameters while preserving the original ciphertext and key commitments.
     function updateOffer(uint256 offerId, uint96 newPrice, uint64 newExpiresAt, bool active, bytes32 newMetadataHash)
         external
     {
-        Offer storage offer = _getOfferStorage(offerId);
+        PackedOffer storage offer = _getOfferStorage(offerId);
 
         if (offer.provider != msg.sender) {
             revert NotOfferProvider();
         }
         if (newPrice == 0) {
             revert InvalidPrice();
+        }
+        _validateExpiry(newExpiresAt);
+        if (newMetadataHash == bytes32(0)) {
+            revert InvalidOfferHashes();
         }
 
         offer.price = newPrice;
@@ -112,62 +140,118 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         emit OfferUpdated(offerId, newPrice, newExpiresAt, active, newMetadataHash);
     }
 
+    /// @notice Returns the externally stable offer view for a given offer id.
     function getOffer(uint256 offerId) external view returns (Offer memory) {
-        return _getOfferStorage(offerId);
+        return _toOffer(_getOfferStorage(offerId));
     }
 
+    /// @notice Purchases access for the caller using exact native ETH payment.
+    /// @dev The emitted recipient is informational; on-chain access is always keyed by the buyer address.
     function purchase(uint256 offerId, address recipient) external payable nonReentrant {
-        Offer storage offer = _getOfferStorage(offerId);
+        PackedOffer storage offer = _getOfferStorage(offerId);
 
         if (!offer.active) {
             revert OfferInactive();
         }
-        if (offer.expiresAt != 0 && offer.expiresAt < block.timestamp) {
+        if (offer.expiresAt != 0 && offer.expiresAt <= block.timestamp) {
             revert OfferExpired();
         }
-        if (offer.paymentToken != address(0)) {
+        address paymentToken = offer.paymentToken;
+        if (paymentToken != address(0)) {
             revert InvalidPaymentToken();
         }
         if (purchasedAt[offerId][msg.sender] != 0) {
             revert AlreadyPurchased();
         }
-        if (msg.value != offer.price) {
+        uint96 price = offer.price;
+        if (msg.value != price) {
             revert InvalidPrice();
         }
 
         uint64 purchasedTimestampValue = uint64(block.timestamp);
         purchasedAt[offerId][msg.sender] = purchasedTimestampValue;
 
-        (bool success,) = offer.payout.call{value: msg.value}("");
+        address payout = offer.payout;
+        (bool success,) = payout.call{value: msg.value}("");
         if (!success) {
             revert PaymentFailed();
         }
 
+        address normalizedRecipient = recipient == address(0) ? msg.sender : recipient;
+
         emit AccessPurchased(
             offerId,
             msg.sender,
-            recipient == address(0) ? msg.sender : recipient,
-            offer.paymentToken,
-            offer.price,
+            normalizedRecipient,
+            paymentToken,
+            price,
             purchasedTimestampValue,
             offer.ciphertextHash,
             offer.keyCommitment
         );
     }
 
+    /// @notice Returns whether a buyer has already purchased access to an offer.
     function hasAccess(uint256 offerId, address user) external view returns (bool) {
         return purchasedAt[offerId][user] != 0;
     }
 
+    /// @notice Returns the purchase timestamp for a buyer or zero when access has not been purchased.
     function purchasedTimestamp(uint256 offerId, address user) external view returns (uint64) {
         return purchasedAt[offerId][user];
     }
 
-    function _getOfferStorage(uint256 offerId) internal view returns (Offer storage offer) {
+    function _getOfferStorage(uint256 offerId) internal view returns (PackedOffer storage offer) {
         offer = offers[offerId];
         if (offer.provider == address(0)) {
             revert OfferNotFound();
         }
     }
-}
 
+    function _nonReentrantBefore() internal {
+        if (unlocked != NOT_ENTERED) {
+            revert ReentrancyDetected();
+        }
+        unlocked = ENTERED;
+    }
+
+    function _nonReentrantAfter() internal {
+        unlocked = NOT_ENTERED;
+    }
+
+    function _validateExpiry(uint64 expiresAt) internal view {
+        if (expiresAt != 0 && expiresAt <= block.timestamp) {
+            revert InvalidExpiry();
+        }
+    }
+
+    function _validateOfferHashes(
+        bytes32 ciphertextHash,
+        bytes32 keyCommitment,
+        bytes32 metadataHash,
+        bytes32 providerUaidHash
+    ) internal pure {
+        if (
+            ciphertextHash == bytes32(0) || keyCommitment == bytes32(0) || metadataHash == bytes32(0)
+                || providerUaidHash == bytes32(0)
+        ) {
+            revert InvalidOfferHashes();
+        }
+    }
+
+    function _toOffer(PackedOffer storage offer) internal view returns (Offer memory) {
+        return Offer({
+            provider: offer.provider,
+            payout: offer.payout,
+            paymentToken: offer.paymentToken,
+            price: offer.price,
+            createdAt: offer.createdAt,
+            expiresAt: offer.expiresAt,
+            active: offer.active,
+            ciphertextHash: offer.ciphertextHash,
+            keyCommitment: offer.keyCommitment,
+            metadataHash: offer.metadataHash,
+            providerUaidHash: offer.providerUaidHash
+        });
+    }
+}

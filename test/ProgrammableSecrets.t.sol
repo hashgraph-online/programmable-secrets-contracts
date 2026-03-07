@@ -210,7 +210,7 @@ contract ProgrammableSecretsTest is Test {
     }
 
     function testFuzzCreateOfferStoresRandomPriceAndExpiry(uint96 price, uint64 expiresAt) public {
-        if (price == 0) {
+        if (price == 0 || (expiresAt != 0 && expiresAt <= block.timestamp)) {
             return;
         }
 

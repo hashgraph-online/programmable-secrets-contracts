@@ -7,7 +7,8 @@ error OfferInactive();
 error OfferExpired();
 error AlreadyPurchased();
 error InvalidPrice();
+error InvalidExpiry();
 error InvalidPaymentToken();
+error InvalidOfferHashes();
 error PaymentFailed();
 error ReentrancyDetected();
-
