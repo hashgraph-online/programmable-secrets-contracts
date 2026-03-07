@@ -1,0 +1,11 @@
+{
+  "chainId": 46630,
+  "network": "robinhood-testnet",
+  "contractAddress": "0x0C04e50660332dB8Fda62f92c07eA725D0D66e80",
+  "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
+  "blockNumber": 9093238,
+  "transactionHash": "0x9c473e43569da767a13bf16922205222de92c727f5bc541fe19d038d4753ed5e",
+  "deployedAt": "2026-03-07T01:49:25Z",
+  "abiChecksum": "77090895059bc200089ebc6ef3314af06c32131c9d1bed50961230af429860c3",
+  "gitCommit": "8895ed9046b9821f0dc7be3ff882398010c85364"
+}
