@@ -8,31 +8,86 @@ import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 
 contract Deploy is Script {
-    function run() external {
+    bytes32 internal constant DEFAULT_POLICY_VAULT_IMPLEMENTATION_SALT =
+        keccak256("programmable-secrets-policy-vault-implementation-v1");
+    bytes32 internal constant DEFAULT_POLICY_VAULT_PROXY_SALT =
+        keccak256("programmable-secrets-policy-vault-proxy-v1");
+    bytes32 internal constant DEFAULT_PAYMENT_MODULE_IMPLEMENTATION_SALT =
+        keccak256("programmable-secrets-payment-module-implementation-v1");
+    bytes32 internal constant DEFAULT_PAYMENT_MODULE_PROXY_SALT =
+        keccak256("programmable-secrets-payment-module-proxy-v1");
+    bytes32 internal constant DEFAULT_ACCESS_RECEIPT_SALT =
+        keccak256("programmable-secrets-access-receipt-v1");
+
+    function run() external virtual {
         uint256 deployerPrivateKey = vm.envUint("ETH_PK");
         address deployer = address(uint160(vm.envUint("DEPLOYER_ADDRESS")));
         address requestedOwner = address(uint160(vm.envUint("CONTRACT_OWNER")));
         address identityRegistryAddress = address(uint160(vm.envUint("IDENTITY_REGISTRY_ADDRESS")));
+        _deploy(deployerPrivateKey, deployer, requestedOwner, identityRegistryAddress, false);
+    }
+
+    function _deploy(
+        uint256 deployerPrivateKey,
+        address deployer,
+        address requestedOwner,
+        address identityRegistryAddress,
+        bool useCreate2
+    ) internal {
+        bytes32 policyVaultImplementationSalt = DEFAULT_POLICY_VAULT_IMPLEMENTATION_SALT;
+        bytes32 policyVaultProxySalt = DEFAULT_POLICY_VAULT_PROXY_SALT;
+        bytes32 paymentModuleImplementationSalt = DEFAULT_PAYMENT_MODULE_IMPLEMENTATION_SALT;
+        bytes32 paymentModuleProxySalt = DEFAULT_PAYMENT_MODULE_PROXY_SALT;
+        bytes32 accessReceiptSalt = DEFAULT_ACCESS_RECEIPT_SALT;
 
         vm.startBroadcast(deployerPrivateKey);
-        address policyVaultImplementation = address(new PolicyVault());
-        PolicyVault deployedPolicyVault = PolicyVault(
-            address(new ERC1967Proxy(policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))))
-        );
-        AccessReceipt deployedAccessReceipt = new AccessReceipt(deployer);
+        address policyVaultImplementation;
+        PolicyVault deployedPolicyVault;
+        AccessReceipt deployedAccessReceipt;
+        address paymentModuleImplementation;
+        PaymentModule deployedPaymentModule;
 
-        address paymentModuleImplementation = address(new PaymentModule());
-        PaymentModule deployedPaymentModule = PaymentModule(
-            address(
-                new ERC1967Proxy(
-                    paymentModuleImplementation,
-                    abi.encodeCall(
-                        PaymentModule.initialize,
-                        (deployer, address(deployedPolicyVault), address(deployedAccessReceipt))
+        if (useCreate2) {
+            policyVaultImplementation = address(new PolicyVault{salt: policyVaultImplementationSalt}());
+            deployedPolicyVault = PolicyVault(
+                address(
+                    new ERC1967Proxy{salt: policyVaultProxySalt}(
+                        policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))
                     )
                 )
-            )
-        );
+            );
+            deployedAccessReceipt = new AccessReceipt{salt: accessReceiptSalt}(deployer);
+            paymentModuleImplementation = address(new PaymentModule{salt: paymentModuleImplementationSalt}());
+            deployedPaymentModule = PaymentModule(
+                address(
+                    new ERC1967Proxy{salt: paymentModuleProxySalt}(
+                        paymentModuleImplementation,
+                        abi.encodeCall(
+                            PaymentModule.initialize,
+                            (deployer, address(deployedPolicyVault), address(deployedAccessReceipt))
+                        )
+                    )
+                )
+            );
+        } else {
+            policyVaultImplementation = address(new PolicyVault());
+            deployedPolicyVault = PolicyVault(
+                address(new ERC1967Proxy(policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))))
+            );
+            deployedAccessReceipt = new AccessReceipt(deployer);
+            paymentModuleImplementation = address(new PaymentModule());
+            deployedPaymentModule = PaymentModule(
+                address(
+                    new ERC1967Proxy(
+                        paymentModuleImplementation,
+                        abi.encodeCall(
+                            PaymentModule.initialize,
+                            (deployer, address(deployedPolicyVault), address(deployedAccessReceipt))
+                        )
+                    )
+                )
+            );
+        }
         deployedAccessReceipt.setPaymentModule(address(deployedPaymentModule));
 
         if (requestedOwner != deployer) {
@@ -42,5 +97,15 @@ contract Deploy is Script {
         }
         identityRegistryAddress;
         vm.stopBroadcast();
+    }
+}
+
+contract DeployCreate2 is Deploy {
+    function run() external override {
+        uint256 deployerPrivateKey = vm.envUint("ETH_PK");
+        address deployer = address(uint160(vm.envUint("DEPLOYER_ADDRESS")));
+        address requestedOwner = address(uint160(vm.envUint("CONTRACT_OWNER")));
+        address identityRegistryAddress = address(uint160(vm.envUint("IDENTITY_REGISTRY_ADDRESS")));
+        _deploy(deployerPrivateKey, deployer, requestedOwner, identityRegistryAddress, true);
     }
 }

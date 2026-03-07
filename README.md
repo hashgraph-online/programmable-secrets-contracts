@@ -37,6 +37,21 @@ The intended app entrypoints are:
 Robinhood testnet is the primary demo target.
 Arbitrum Sepolia is maintained as a secondary testnet deployment target.
 
+## Current Deployments
+
+Canonical app-facing addresses are tracked in:
+- `deployments/robinhood-testnet.json`
+- `deployments/arbitrum-sepolia.json`
+
+Current deployed addresses:
+
+| Network | PolicyVault | PaymentModule | AccessReceipt | IdentityRegistry |
+| --- | --- | --- | --- | --- |
+| Robinhood Chain Testnet | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x849575C669e9fA3944880c77E8c77b5c1dE58c8D` | `0x0000000000000000000000000000000000000000` |
+| Arbitrum Sepolia | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x849575C669e9fA3944880c77E8c77b5c1dE58c8D` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
+
+The contract repo should always treat these manifest files as the deployment source of truth.
+
 ## Contract Surface
 
 ### PolicyVault
@@ -145,6 +160,78 @@ forge inspect --json PaymentModule abi > abis/PaymentModule.abi.json
 forge inspect --json PolicyVault abi > abis/PolicyVault.abi.json
 ```
 
+## CLI Demos
+
+The contracts repo includes two live CLI proofs in `script/manage-policies.mjs`:
+- `demo:uaid-flow` runs the direct onchain ERC-8004 path
+- `demo:broker-uaid-flow` registers through the local Registry Broker with `RegistryBrokerClient`, then proves the same UAID-gated purchase flow against the selected live IdentityRegistry
+
+Install the single Node dependency:
+
+```bash
+pnpm install
+```
+
+Create a local env file:
+
+```bash
+cp .env.example .env
+```
+
+Required environment variables in `.env`:
+- `ETH_PK` for the agent wallet that will register the ERC-8004 identity and purchase access
+- `ETH_PK_2` for the provider wallet that will register the dataset and create the gated policy
+
+Show the available commands:
+
+```bash
+pnpm run help
+```
+
+Run the original direct flow:
+
+```bash
+pnpm run demo:uaid-flow
+```
+
+What the direct flow does on the selected live ERC-8004 network:
+1. registers a new agent in the external ERC-8004 `IdentityRegistry`
+2. registers a dataset in `PolicyVault`
+3. creates a UAID-gated policy that only that registered agent can unlock
+4. purchases the policy from the registered agent wallet through `PaymentModule`
+5. reads back the minted `AccessReceipt`
+6. decrypts the locally prepared payload to prove the unlock path completed
+
+Run the separate broker-backed flow:
+
+```bash
+pnpm run demo:broker-uaid-flow
+```
+
+What the broker-backed flow does:
+1. starts a local demo agent with the `standards-sdk`
+2. registers that agent in the local Registry Broker with `RegistryBrokerClient`
+3. links the agent into the selected live ERC-8004 registry and receives a real UAID
+4. registers a dataset in `PolicyVault`
+5. creates a UAID-gated policy that only that broker-issued UAID can unlock
+6. purchases the policy, reads back the minted `AccessReceipt`, and decrypts the prepared payload
+
+Optional overrides:
+- `DEMO_ERC8004_NETWORK`
+- `DEMO_AGENT_URI`
+- `DEMO_BUYER_UAID`
+- `DEMO_PROVIDER_UAID`
+- `DEMO_PRICE_WEI`
+- `DEMO_EXPIRES_AT_UNIX`
+- `REGISTRY_BROKER_BASE_URL`
+- `REGISTRY_BROKER_API_KEY`
+- `REGISTRY_BROKER_ACCOUNT_ID`
+- `REGISTRY_BROKER_ERC8004_NETWORK`
+
+By default both demos use Robinhood Testnet. Set `DEMO_ERC8004_NETWORK=arbitrum-sepolia` if you want the original Arbitrum Sepolia path.
+
+If you want to point at a different env file, set `PROGRAMMABLE_SECRETS_ENV_PATH` before running the command.
+
 ## Deployment
 
 Required environment variables for `script/Deploy.s.sol`:
@@ -173,6 +260,35 @@ Each manifest is expected to record:
 - `entrypoints.policyVaultAddress`
 - `entrypoints.paymentModuleAddress`
 - `entrypoints.accessReceiptAddress`
+
+### Deterministic Same-Address Deployment
+
+The current checked-in deployments were created deterministically with `script/Deploy.s.sol:DeployCreate2`, so the app-facing contract addresses match across Robinhood Chain Testnet and Arbitrum Sepolia.
+
+If you need to reproduce the same deployment pattern on a fresh environment, use the CREATE2-based deployment path:
+- keep `DEPLOYER_ADDRESS` and `CONTRACT_OWNER` identical on both networks
+- keep the CREATE2 salts identical on both networks
+- run Foundry with the standard CREATE2 deployer at `0x4e59b44847b379578588920cA78FbF26c0B4956C`
+
+Recommended command shape:
+
+```bash
+forge script script/Deploy.s.sol:DeployCreate2 \
+  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
+  --broadcast \
+  --always-use-create-2-factory \
+  --create2-deployer 0x4e59b44847b379578588920cA78FbF26c0B4956C \
+  -vvv
+```
+
+Default salts are baked into the deploy script:
+- `programmable-secrets-policy-vault-implementation-v1`
+- `programmable-secrets-policy-vault-proxy-v1`
+- `programmable-secrets-payment-module-implementation-v1`
+- `programmable-secrets-payment-module-proxy-v1`
+- `programmable-secrets-access-receipt-v1`
+
+Because Robinhood Chain Testnet and Arbitrum Sepolia both expose the standard `0x4e59...956C` CREATE2 deployer, deterministic redeployment to matching addresses is feasible. The manifests should only be updated after both networks are redeployed in CREATE2 mode.
 
 ## ABI Files
 
