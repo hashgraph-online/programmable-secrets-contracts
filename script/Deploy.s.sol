@@ -10,14 +10,12 @@ import {PolicyVault} from "../src/PolicyVault.sol";
 contract Deploy is Script {
     bytes32 internal constant DEFAULT_POLICY_VAULT_IMPLEMENTATION_SALT =
         keccak256("programmable-secrets-policy-vault-implementation-v1");
-    bytes32 internal constant DEFAULT_POLICY_VAULT_PROXY_SALT =
-        keccak256("programmable-secrets-policy-vault-proxy-v1");
+    bytes32 internal constant DEFAULT_POLICY_VAULT_PROXY_SALT = keccak256("programmable-secrets-policy-vault-proxy-v1");
     bytes32 internal constant DEFAULT_PAYMENT_MODULE_IMPLEMENTATION_SALT =
         keccak256("programmable-secrets-payment-module-implementation-v1");
     bytes32 internal constant DEFAULT_PAYMENT_MODULE_PROXY_SALT =
         keccak256("programmable-secrets-payment-module-proxy-v1");
-    bytes32 internal constant DEFAULT_ACCESS_RECEIPT_SALT =
-        keccak256("programmable-secrets-access-receipt-v1");
+    bytes32 internal constant DEFAULT_ACCESS_RECEIPT_SALT = keccak256("programmable-secrets-access-receipt-v1");
 
     function run() external virtual {
         uint256 deployerPrivateKey = vm.envUint("ETH_PK");
