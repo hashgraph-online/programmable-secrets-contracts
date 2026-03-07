@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import {
@@ -39,15 +41,106 @@ const DEFAULT_REGISTRY_NAMESPACE = 'hashgraph-online';
 const DEFAULT_COMMUNICATION_PROTOCOL = 'a2a';
 const CLI_COMMAND = 'programmable-secret';
 const CLI_ALIAS = 'programmable-secrets';
+const CLI_CONFIG_DIR = resolve(homedir(), '.config', CLI_COMMAND);
+const CLI_CONFIG_PATH = resolve(CLI_CONFIG_DIR, 'config.json');
 const DEFAULT_ENV_OUTPUT_PATH = resolve(
   process.env.PROGRAMMABLE_SECRETS_ENV_OUTPUT_PATH?.trim() || resolve(PACKAGE_ROOT, '.env.local'),
 );
 const DEFAULT_DOCKER_CONTAINERS = ['registry-broker-registry-broker-1'];
 const RUNTIME_ENV_CACHE = new Map();
+const CLI_RUNTIME = {
+  agentSafe: false,
+  command: null,
+  globalOptions: {},
+  interactive: false,
+  json: false,
+  noColor: false,
+  profile: null,
+  profileName: null,
+  quiet: false,
+  yes: false,
+};
 const DOCKER_ENV_ALIASES = {
   REGISTRY_BROKER_API_KEY: ['API_KEYS'],
   REGISTRY_BROKER_ACCOUNT_ID: ['ETH_ACCOUNT_ID'],
 };
+const TEMPLATE_REGISTRY = {
+  'finance-timebound-dataset': {
+    description: 'Dataset registration metadata plus a 24-hour finance policy scaffold.',
+    kind: 'dataset-policy-template',
+    payload: {
+      dataset: {
+        providerUaid: 'did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab',
+        metadata: {
+          title: 'TSLA volatility surface',
+          category: 'premium-market-data',
+          mimeType: 'application/json',
+        },
+      },
+      policy: {
+        type: 'timebound',
+        priceWei: '10000000000000',
+        durationHours: 24,
+        payout: 'provider-wallet',
+      },
+    },
+  },
+  'finance-uaid-policy': {
+    description: 'UAID-gated entitlement template for an ERC-8004-backed finance agent.',
+    kind: 'policy-template',
+    payload: {
+      policy: {
+        type: 'uaid-erc8004',
+        datasetId: 1,
+        priceWei: '10000000000000',
+        durationHours: 24,
+        requiredBuyerUaid: 'uaid:aid:...',
+        agentId: 97,
+      },
+    },
+  },
+  'krs-local-bundle': {
+    description: 'Local-only encrypted payload bundle shape for CLI KRS verification and decryption.',
+    kind: 'krs-template',
+    payload: {
+      bundle: {
+        version: 1,
+        title: 'TSLA volatility bundle',
+        plaintext: 'Put your premium signal JSON here',
+      },
+    },
+  },
+};
+const COMMAND_TREE = {
+  access: ['dataset', 'policy', 'receipt-dataset', 'receipt-policy'],
+  contracts: [],
+  datasets: ['export', 'get', 'import', 'list', 'register', 'set-active'],
+  doctor: [],
+  'env-bootstrap': [],
+  'flow:broker': [],
+  'flow:direct': [],
+  help: [],
+  identity: ['register'],
+  init: [],
+  krs: ['decrypt', 'encrypt', 'verify'],
+  preview: [],
+  profiles: ['init', 'list', 'show'],
+  policies: ['allowlist', 'create-uaid', 'create-timebound', 'export', 'get', 'import', 'list', 'update'],
+  purchase: [],
+  receipts: ['get'],
+  start: [],
+  templates: ['list', 'show', 'write'],
+  completions: ['bash', 'fish', 'zsh'],
+};
+
+class CliError extends Error {
+  constructor(code, message, remediation = null, details = null) {
+    super(message);
+    this.code = code;
+    this.remediation = remediation;
+    this.details = details;
+  }
+}
 
 const robinhoodTestnet = {
   id: 46630,
@@ -139,16 +232,267 @@ loadEnvironment();
 function loadDeployment(network) {
   const path = DEPLOYMENT_FILES[network];
   if (!path) {
-    throw new Error(`Unsupported deployment network: ${network}`);
+    throw new CliError(
+      'UNSUPPORTED_NETWORK',
+      `Unsupported deployment network: ${network}`,
+      `Use one of: ${Object.keys(DEPLOYMENT_FILES).join(', ')}.`,
+    );
   }
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+function jsonReplacer(_key, value) {
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+  if (value instanceof Uint8Array || Buffer.isBuffer(value)) {
+    return `0x${Buffer.from(value).toString('hex')}`;
+  }
+  return value;
+}
+
+function serializeJson(value) {
+  return JSON.stringify(value, jsonReplacer, 2);
+}
+
+function ensureConfigDir() {
+  mkdirSync(CLI_CONFIG_DIR, {
+    recursive: true,
+  });
+}
+
+function getDefaultConfig() {
+  return {
+    defaultProfile: 'robinhood-agent',
+    profiles: {
+      'arbitrum-agent': {
+        interactive: false,
+        network: 'arbitrum-sepolia',
+        wallet: 'agent',
+      },
+      provider: {
+        interactive: false,
+        network: 'robinhood-testnet',
+        payout: 'provider-wallet',
+        wallet: 'provider',
+      },
+      'robinhood-agent': {
+        interactive: false,
+        network: 'robinhood-testnet',
+        wallet: 'agent',
+      },
+    },
+  };
+}
+
+function loadCliConfig() {
+  if (!existsSync(CLI_CONFIG_PATH)) {
+    return getDefaultConfig();
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(CLI_CONFIG_PATH, 'utf8'));
+    return {
+      ...getDefaultConfig(),
+      ...parsed,
+      profiles: {
+        ...getDefaultConfig().profiles,
+        ...(parsed.profiles || {}),
+      },
+    };
+  } catch (error) {
+    throw new CliError(
+      'CONFIG_INVALID',
+      `Unable to parse ${CLI_CONFIG_PATH}.`,
+      `Fix the JSON syntax in ${CLI_CONFIG_PATH} or rerun ${CLI_COMMAND} init --force.`,
+      error instanceof Error ? error.message : `${error}`,
+    );
+  }
+}
+
+function writeCliConfig(config, outputPath = CLI_CONFIG_PATH, overwrite = false) {
+  if (existsSync(outputPath) && !overwrite) {
+    throw new CliError(
+      'CONFIG_EXISTS',
+      `${outputPath} already exists.`,
+      `Pass --force or remove the file before rerunning ${CLI_COMMAND} init.`,
+    );
+  }
+  ensureConfigDir();
+  writeFileSync(outputPath, `${serializeJson(config)}\n`);
+}
+
+function getProfileOptions() {
+  return CLI_RUNTIME.profile?.options || CLI_RUNTIME.profile?.settings || CLI_RUNTIME.profile || {};
+}
+
+function initializeRuntime(globalOptions, commandName) {
+  const config = loadCliConfig();
+  const profileName = readOption(globalOptions, ['profile'], config.defaultProfile || null);
+  const profile = profileName ? config.profiles?.[profileName] || null : null;
+  CLI_RUNTIME.command = commandName;
+  CLI_RUNTIME.globalOptions = globalOptions;
+  CLI_RUNTIME.profileName = profileName || null;
+  CLI_RUNTIME.profile = profile;
+  CLI_RUNTIME.agentSafe = parseBooleanOption(readOption(globalOptions, ['agent-safe'], false), false);
+  CLI_RUNTIME.json = CLI_RUNTIME.agentSafe || parseBooleanOption(readOption(globalOptions, ['json'], false), false);
+  CLI_RUNTIME.quiet = CLI_RUNTIME.agentSafe || parseBooleanOption(readOption(globalOptions, ['quiet'], false), false);
+  CLI_RUNTIME.noColor = CLI_RUNTIME.agentSafe || parseBooleanOption(readOption(globalOptions, ['no-color'], false), false);
+  CLI_RUNTIME.yes = CLI_RUNTIME.agentSafe || parseBooleanOption(readOption(globalOptions, ['yes'], false), false);
+  CLI_RUNTIME.interactive = CLI_RUNTIME.agentSafe
+    ? false
+    : parseBooleanOption(readOption(globalOptions, ['interactive'], false), false) && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+function emitJson(payload) {
+  console.log(serializeJson(payload));
+}
+
+function emitResult(kind, payload) {
+  if (CLI_RUNTIME.json) {
+    emitJson({
+      kind,
+      payload,
+      profile: CLI_RUNTIME.profileName,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+function createReadResult(kind, payload, extra = {}) {
+  return {
+    ...extra,
+    kind,
+    network: payload.network || null,
+    profile: CLI_RUNTIME.profileName,
+    result: payload,
+  };
+}
+
+function createTransactionResult({
+  action,
+  chain,
+  contract,
+  explorerUrl,
+  nextCommand = null,
+  txHash,
+  valueWei = 0n,
+  wallet,
+  ...rest
+}) {
+  return {
+    action,
+    chainId: chain.id,
+    contract,
+    explorerUrl,
+    network: chain.name,
+    nextCommand,
+    txHash,
+    valueWei,
+    wallet,
+    ...rest,
+  };
+}
+
+function printTransactionResult(result) {
+  if (CLI_RUNTIME.json) {
+    emitResult('transaction', result);
+    return;
+  }
+  printHeading(result.action);
+  printField('Network', result.network);
+  printField('Contract', result.contract);
+  printField('Wallet', result.wallet);
+  if (result.entityLabel && result.entityValue !== undefined) {
+    printField(result.entityLabel, result.entityValue);
+  }
+  if (result.secondaryLabel && result.secondaryValue !== undefined) {
+    printField(result.secondaryLabel, result.secondaryValue);
+  }
+  if (result.valueWei !== undefined) {
+    printField('Value', `${formatEther(BigInt(result.valueWei))} ETH (${result.valueWei} wei)`);
+  }
+  printField('Tx', result.txHash);
+  if (result.explorerUrl) {
+    printField('Explorer', result.explorerUrl);
+  }
+  if (result.nextCommand) {
+    printField('Next', result.nextCommand);
+  }
+}
+
+function buildExplorerUrl(chain, hash, kind = 'tx') {
+  if (!chain?.explorerBaseUrl || !hash) {
+    return null;
+  }
+  return `${chain.explorerBaseUrl}/${kind}/${hash}`;
+}
+
+function emitPreview(preview) {
+  if (CLI_RUNTIME.json) {
+    emitResult('preview', preview);
+    return true;
+  }
+  printHeading(`Preview: ${preview.action}`);
+  printField('Network', preview.network);
+  printField('Contract', preview.contract);
+  printField('Address', preview.address);
+  printField('Wallet', preview.wallet);
+  printField('Function', preview.functionName);
+  if (preview.valueWei !== undefined) {
+    printField('Value', `${formatEther(BigInt(preview.valueWei))} ETH (${preview.valueWei} wei)`);
+  }
+  printInfo(`Args: ${serializeJson(preview.args)}`);
+  if (preview.nextCommand) {
+    printField('Next', preview.nextCommand);
+  }
+  return true;
+}
+
+function shouldPreview(options) {
+  return parseBooleanOption(readOption(options, ['preview', 'explain'], false), false);
+}
+
+async function promptValue(question, fallback = '') {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const promptSuffix = fallback ? ` [${fallback}]` : '';
+    const answer = (await rl.question(`${question}${promptSuffix}: `)).trim();
+    return answer || fallback;
+  } finally {
+    rl.close();
+  }
+}
+
+async function maybePromptOption(options, names, question, fallback = null) {
+  const existing = readOption(options, names, null);
+  if (existing !== null) {
+    return existing;
+  }
+  if (!CLI_RUNTIME.interactive) {
+    return fallback;
+  }
+  const answer = await promptValue(question, fallback ?? '');
+  if (answer) {
+    options[Array.isArray(names) ? names[0] : names] = answer;
+    return answer;
+  }
+  return fallback;
+}
+
 function printHeading(title) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet) {
+    return;
+  }
   console.log(`\n=== ${title} ===`);
 }
 
 function printField(label, value) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet) {
+    return;
+  }
   console.log(`${label.padEnd(16)} ${value}`);
 }
 
@@ -160,18 +504,30 @@ function printExplorerLink(chain, hash) {
 }
 
 function printStep(stepNumber, title) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet) {
+    return;
+  }
   console.log(`\n[${stepNumber}] ${title}`);
 }
 
 function printSuccess(message) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet) {
+    return;
+  }
   console.log(`\n[ok] ${message}`);
 }
 
 function printWarning(message) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet) {
+    return;
+  }
   console.log(`\n[warn] ${message}`);
 }
 
 function printInfo(message) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet) {
+    return;
+  }
   console.log(`\n[i] ${message}`);
 }
 
@@ -223,6 +579,13 @@ function readOption(options, names, fallback = null) {
       return `${value}`.trim();
     }
   }
+  const profileOptions = getProfileOptions();
+  for (const name of optionNames) {
+    const value = profileOptions[name];
+    if (value !== undefined && value !== null && `${value}`.trim() !== '') {
+      return `${value}`.trim();
+    }
+  }
   return fallback;
 }
 
@@ -232,7 +595,15 @@ function requireOption(options, names, description) {
     return value;
   }
   const label = Array.isArray(names) ? names.join(' or ') : names;
-  throw new Error(`Missing ${description}. Provide --${label}.`);
+  throw new CliError(
+    'MISSING_OPTION',
+    `Missing ${description}.`,
+    `Provide --${label} or rerun with --interactive.`,
+    {
+      description,
+      option: label,
+    },
+  );
 }
 
 function parseBooleanOption(value, fallback = false) {
@@ -246,21 +617,25 @@ function parseBooleanOption(value, fallback = false) {
   if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
     return false;
   }
-  throw new Error(`Invalid boolean value "${value}". Expected true/false.`);
+  throw new CliError(
+    'INVALID_BOOLEAN',
+    `Invalid boolean value "${value}".`,
+    'Expected true or false.',
+  );
 }
 
 function parseBigIntValue(value, description) {
   try {
     return BigInt(value);
   } catch {
-    throw new Error(`Invalid ${description}: "${value}"`);
+    throw new CliError('INVALID_NUMBER', `Invalid ${description}: "${value}"`);
   }
 }
 
 function parseUintValue(value, description) {
   const parsed = Number.parseInt(`${value}`.trim(), 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`Invalid ${description}: "${value}"`);
+    throw new CliError('INVALID_NUMBER', `Invalid ${description}: "${value}"`);
   }
   return parsed;
 }
@@ -281,7 +656,11 @@ function normalizeHash(value, description) {
   if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
     return trimmed;
   }
-  throw new Error(`Invalid ${description}. Expected a 32-byte hex string.`);
+  throw new CliError(
+    'INVALID_HASH',
+    `Invalid ${description}.`,
+    'Expected a 32-byte hex string.',
+  );
 }
 
 function buildHashFromText(value) {
@@ -313,8 +692,10 @@ function resolveHashOption(options, config) {
     return config.fallback;
   }
 
-  throw new Error(
-    `Missing ${config.description}. Provide ${config.example}.`,
+  throw new CliError(
+    'MISSING_HASH_SOURCE',
+    `Missing ${config.description}.`,
+    `Provide ${config.example}.`,
   );
 }
 
@@ -364,7 +745,7 @@ function resolvePriceWei(options) {
   if (priceEth) {
     const normalized = `${priceEth}`.trim();
     if (!/^\d+(\.\d+)?$/.test(normalized)) {
-      throw new Error(`Invalid price-eth: "${priceEth}"`);
+      throw new CliError('INVALID_PRICE', `Invalid price-eth: "${priceEth}"`);
     }
     const [whole, fractional = ''] = normalized.split('.');
     const paddedFractional = `${fractional}000000000000000000`.slice(0, 18);
@@ -390,7 +771,7 @@ function resolveExpiryUnix(options) {
   if (explicitIso) {
     const parsed = Date.parse(explicitIso);
     if (!Number.isFinite(parsed)) {
-      throw new Error(`Invalid expires-at-iso: "${explicitIso}"`);
+      throw new CliError('INVALID_DATE', `Invalid expires-at-iso: "${explicitIso}"`);
     }
     return BigInt(Math.floor(parsed / 1000));
   }
@@ -416,7 +797,11 @@ function resolveExpiryUnix(options) {
 function resolveSelectedWalletRole(options, fallback) {
   const role = readOption(options, ['wallet', 'actor'], fallback);
   if (!['agent', 'provider'].includes(role)) {
-    throw new Error(`Invalid wallet role "${role}". Expected agent or provider.`);
+    throw new CliError(
+      'INVALID_WALLET_ROLE',
+      `Invalid wallet role "${role}".`,
+      'Expected agent or provider.',
+    );
   }
   return role;
 }
@@ -435,8 +820,82 @@ function resolvePreferredEnvValue(primaryName, legacyNames = [], fallback = null
   return { value: null, source: 'missing' };
 }
 
+function resolveOutputPath(options, fallback = null) {
+  return readOption(options, ['output', 'output-file'], fallback);
+}
+
+async function completeInteractiveOptions(commandName, subcommand, options) {
+  if (!CLI_RUNTIME.interactive) {
+    return options;
+  }
+
+  if (commandName === 'datasets' && subcommand === 'register') {
+    await maybePromptOption(options, ['provider-uaid'], 'Provider UAID');
+    await maybePromptOption(options, ['metadata-json'], 'Dataset metadata JSON', '{"title":"TSLA volatility dataset"}');
+    await maybePromptOption(options, ['ciphertext'], 'Ciphertext placeholder');
+    await maybePromptOption(options, ['key-material'], 'Key material placeholder');
+  }
+
+  if (commandName === 'policies' && subcommand === 'create-timebound') {
+    await maybePromptOption(options, ['dataset-id'], 'Dataset id');
+    await maybePromptOption(options, ['price-eth'], 'Price in ETH', '0.00001');
+    await maybePromptOption(options, ['duration-hours'], 'Access duration in hours', '24');
+    await maybePromptOption(options, ['metadata-json'], 'Policy metadata JSON', '{"title":"24 hour access"}');
+  }
+
+  if (commandName === 'policies' && subcommand === 'create-uaid') {
+    await maybePromptOption(options, ['dataset-id'], 'Dataset id');
+    await maybePromptOption(options, ['price-eth'], 'Price in ETH', '0.00001');
+    await maybePromptOption(options, ['duration-hours'], 'Access duration in hours', '24');
+    await maybePromptOption(options, ['required-buyer-uaid'], 'Required buyer UAID');
+    await maybePromptOption(options, ['agent-id'], 'ERC-8004 agent id');
+    await maybePromptOption(options, ['metadata-json'], 'Policy metadata JSON', '{"title":"UAID-gated access"}');
+  }
+
+  if (commandName === 'policies' && subcommand === 'update') {
+    await maybePromptOption(options, ['policy-id'], 'Policy id');
+  }
+
+  if (commandName === 'policies' && subcommand === 'allowlist') {
+    await maybePromptOption(options, ['policy-id'], 'Policy id');
+    await maybePromptOption(options, ['accounts'], 'Comma-separated wallet addresses');
+    await maybePromptOption(options, ['allowed'], 'Allowlist state', 'true');
+  }
+
+  if (commandName === 'purchase') {
+    await maybePromptOption(options, ['policy-id'], 'Policy id');
+  }
+
+  if (commandName === 'identity' && subcommand === 'register') {
+    await maybePromptOption(options, ['agent-uri'], 'Agent URI', 'https://hol.org/agents/volatility-trading-agent-custodian');
+  }
+
+  if (commandName === 'krs' && subcommand === 'encrypt') {
+    await maybePromptOption(options, ['plaintext'], 'Plaintext payload');
+    await maybePromptOption(options, ['title'], 'Bundle title', 'TSLA volatility signal bundle');
+  }
+
+  if (commandName === 'krs' && subcommand === 'decrypt') {
+    await maybePromptOption(options, ['bundle-file'], 'Bundle file path');
+  }
+
+  return options;
+}
+
 function showCommandTopic(topic) {
+  if (CLI_RUNTIME.json) {
+    emitResult('help-topic', {
+      command: topic,
+      subcommands: COMMAND_TREE[topic] || [],
+    });
+    return;
+  }
   switch (topic) {
+    case 'init':
+      printHeading('init');
+      console.log('Bootstraps a sample CLI config and optionally writes shell completions.');
+      console.log(`Run: ${CLI_COMMAND} init --interactive`);
+      return;
     case 'doctor':
       printHeading('doctor');
       console.log('Checks env loading, contract connectivity, broker health, and receipt wiring.');
@@ -460,11 +919,44 @@ function showCommandTopic(topic) {
       console.log(`Run: ${CLI_COMMAND} flow:broker`);
       console.log(`Arbitrum override: PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:broker`);
       return;
+    case 'profiles':
+      printHeading('profiles');
+      printCommandUsage([
+        `List profiles: ${CLI_COMMAND} profiles list`,
+        `Show profile: ${CLI_COMMAND} profiles show --profile provider`,
+        `Write sample config: ${CLI_COMMAND} profiles init --force`,
+      ]);
+      return;
+    case 'templates':
+      printHeading('templates');
+      printCommandUsage([
+        `List templates: ${CLI_COMMAND} templates list`,
+        `Show template: ${CLI_COMMAND} templates show --name finance-timebound-dataset`,
+        `Write template: ${CLI_COMMAND} templates write --name finance-uaid-policy --output finance-uaid-policy.json`,
+      ]);
+      return;
+    case 'krs':
+      printHeading('krs');
+      printCommandUsage([
+        `Encrypt local bundle: ${CLI_COMMAND} krs encrypt --plaintext '{"signal":"buy"}' --output bundle.json`,
+        `Decrypt local bundle: ${CLI_COMMAND} krs decrypt --bundle-file bundle.json`,
+        `Verify onchain linkage: ${CLI_COMMAND} krs verify --bundle-file bundle.json --policy-id 1 --buyer 0x...`,
+      ]);
+      return;
+    case 'completions':
+      printHeading('completions');
+      printCommandUsage([
+        `Zsh completions: ${CLI_COMMAND} completions zsh --output ~/.zsh/completions/_programmable-secret`,
+        `Bash completions: ${CLI_COMMAND} completions bash`,
+      ]);
+      return;
     case 'datasets':
       printHeading('datasets');
       printCommandUsage([
         `List datasets: ${CLI_COMMAND} datasets list [--network robinhood-testnet]`,
         `Read dataset: ${CLI_COMMAND} datasets get --dataset-id 1`,
+        `Export dataset: ${CLI_COMMAND} datasets export --dataset-id 1 --output dataset-1.json`,
+        `Import dataset: ${CLI_COMMAND} datasets import --file dataset-1.json`,
         'Register dataset:',
         `  ${CLI_COMMAND} datasets register --provider-uaid did:uaid:hol:quantlab --metadata-json '{"title":"TSLA"}' --ciphertext "encrypted payload" --key-material "wrapped key"`,
         'Set dataset active state:',
@@ -476,6 +968,8 @@ function showCommandTopic(topic) {
       printCommandUsage([
         `List policies: ${CLI_COMMAND} policies list [--dataset-id 1]`,
         `Read policy: ${CLI_COMMAND} policies get --policy-id 1`,
+        `Export policy: ${CLI_COMMAND} policies export --policy-id 1 --output policy-1.json`,
+        `Import policy: ${CLI_COMMAND} policies import --file policy-1.json`,
         'Create timebound policy:',
         `  ${CLI_COMMAND} policies create-timebound --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --metadata-json '{"title":"TSLA 24h access"}'`,
         'Create UAID-bound policy:',
@@ -530,18 +1024,27 @@ function showHelp(topic = null) {
     showCommandTopic(topic);
     return;
   }
+  if (CLI_RUNTIME.json) {
+    emitResult('help', {
+      alias: CLI_ALIAS,
+      command: CLI_COMMAND,
+      commands: COMMAND_TREE,
+    });
+    return;
+  }
   printHeading('Programmable Secrets CLI');
   console.log(`Usage: ${CLI_COMMAND} <command>`);
   console.log(`Alias: ${CLI_ALIAS} <command>`);
   console.log('Local wrapper: pnpm run cli -- <command>');
   console.log('');
   console.log('Golden path:');
-  console.log(`  1. ${CLI_COMMAND} start`);
+  console.log(`  1. ${CLI_COMMAND} init`);
   console.log(`  2. ${CLI_COMMAND} doctor`);
   console.log(`  3. ${CLI_COMMAND} flow:direct`);
   console.log(`  4. ${CLI_COMMAND} flow:broker`);
   console.log('');
   console.log('Guided commands:');
+  console.log(`  ${CLI_COMMAND} init          Bootstrap profiles and optional completions`);
   console.log(`  ${CLI_COMMAND} start         Guided quick start with next-step recommendations`);
   console.log(`  ${CLI_COMMAND} doctor        Check env, RPC, broker, and deployment readiness`);
   console.log(`  ${CLI_COMMAND} env-bootstrap Write a local .env.local from live Docker defaults`);
@@ -556,12 +1059,18 @@ function showHelp(topic = null) {
   console.log(`  ${CLI_COMMAND} access ...   Check access and resolve receipts by buyer`);
   console.log(`  ${CLI_COMMAND} receipts ... Read receipt details`);
   console.log(`  ${CLI_COMMAND} identity ... Register ERC-8004 agents`);
+  console.log(`  ${CLI_COMMAND} krs ...      Encrypt, decrypt, and verify local unlock bundles`);
+  console.log(`  ${CLI_COMMAND} profiles ... Manage named operator profiles`);
+  console.log(`  ${CLI_COMMAND} templates ... Emit reusable dataset and policy templates`);
+  console.log(`  ${CLI_COMMAND} completions  Generate shell completions`);
+  console.log(`  ${CLI_COMMAND} preview ...  Preview a state-changing command without sending a transaction`);
   console.log('');
   console.log('Legacy repo helpers:');
   console.log('  pnpm run policies:list');
   console.log('  pnpm run policies:deactivate-all');
   console.log('  pnpm run policies:update-prices');
   console.log('');
+  console.log('Global flags: --json --quiet --interactive --profile <name> --preview --yes --agent-safe');
   console.log('Set PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia to target Arbitrum for the identity flow.');
   console.log(`If wallet keys are missing, run ${CLI_COMMAND} env-bootstrap or ${CLI_COMMAND} doctor.`);
   console.log(`Topic help: ${CLI_COMMAND} help datasets`);
@@ -653,8 +1162,10 @@ function requireEnvValue(name, options = {}) {
   const dockerHint = containerName
     ? ` or load it from Docker with "docker exec ${containerName} printenv ${name}"`
     : '';
-  throw new Error(
-    `Missing ${description} (${name}). Checked process env and ${envPaths}${dockerHint}. Run "pnpm run env:bootstrap" or populate .env.local manually.`,
+  throw new CliError(
+    'MISSING_ENV',
+    `Missing ${description} (${name}).`,
+    `Checked process env and ${envPaths}${dockerHint}. Run "${CLI_COMMAND} env-bootstrap" or populate .env.local manually.`,
   );
 }
 
@@ -716,6 +1227,19 @@ async function runDoctor() {
   const chain = getSelectedChain(networkId);
   const brokerRegistryKey = `erc-8004:${networkId}`;
   let brokerSupportsSelectedNetwork = false;
+  const payload = {
+    accessReceipt: null,
+    brokerHealth: 'unreachable',
+    brokerNetworks: [],
+    brokerSupportsSelectedNetwork: false,
+    dockerSource: resolveDockerContainer() || 'not found',
+    envFiles: ENV_PATH_CANDIDATES,
+    network: chain.name,
+    paymentModule: null,
+    policyCount: null,
+    policyVault: null,
+    receiptPaymentModule: null,
+  };
   printHeading('Programmable Secrets Doctor');
   printField('Selected net', chain.name);
   printField('Env files', ENV_PATH_CANDIDATES.join(', '));
@@ -738,6 +1262,9 @@ async function runDoctor() {
   const policyVaultAddress = buildPolicyVaultAddress(networkId);
   const paymentModuleAddress = buildPaymentModuleAddress(networkId);
   const accessReceiptAddress = buildAccessReceiptAddress(networkId);
+  payload.policyVault = policyVaultAddress;
+  payload.paymentModule = paymentModuleAddress;
+  payload.accessReceipt = accessReceiptAddress;
   printField('PolicyVault', policyVaultAddress);
   printField('PaymentModule', paymentModuleAddress);
   printField('AccessReceipt', accessReceiptAddress);
@@ -748,6 +1275,7 @@ async function runDoctor() {
     abi: POLICY_VAULT_ABI,
     functionName: 'policyCount',
   });
+  payload.policyCount = policyCount;
   printField('policyCount', `${policyCount}`);
 
   const receiptPaymentModule = await publicClient.readContract({
@@ -755,11 +1283,13 @@ async function runDoctor() {
     abi: parseAbi(['function paymentModule() view returns (address)']),
     functionName: 'paymentModule',
   });
+  payload.receiptPaymentModule = receiptPaymentModule;
   printField('Receipt wiring', receiptPaymentModule);
 
   const brokerBaseUrl = resolveEnvValue('REGISTRY_BROKER_BASE_URL', DEFAULT_REGISTRY_BROKER_BASE_URL).value;
   try {
     const response = await fetch(`${brokerBaseUrl}/health`);
+    payload.brokerHealth = response.ok ? 'ok' : `${response.status}`;
     printField('Broker health', response.ok ? 'ok' : `${response.status}`);
   } catch {
     printField('Broker health', 'unreachable');
@@ -782,6 +1312,8 @@ async function runDoctor() {
       .map((entry) => entry?.key)
       .filter(Boolean);
     brokerSupportsSelectedNetwork = availableNetworks.includes(brokerRegistryKey);
+    payload.brokerNetworks = availableNetworks;
+    payload.brokerSupportsSelectedNetwork = brokerSupportsSelectedNetwork;
     printField(
       'Broker ERC-8004',
       brokerSupportsSelectedNetwork ? `ready for ${brokerRegistryKey}` : `missing ${brokerRegistryKey}`,
@@ -791,6 +1323,11 @@ async function runDoctor() {
     }
   } catch {
     printField('Broker ERC-8004', 'unverified');
+  }
+
+  if (CLI_RUNTIME.json) {
+    emitResult('doctor', payload);
+    return;
   }
 
   if (!resolveEnvValue('ETH_PK').value || !resolveEnvValue('ETH_PK_2').value) {
@@ -807,25 +1344,49 @@ async function runDoctor() {
 async function runStart() {
   const networkId = getSelectedNetworkId();
   const chain = getSelectedChain(networkId);
+  const payload = {
+    accessReceipt: buildAccessReceiptAddress(networkId),
+    docker: resolveDockerContainer() || 'not found',
+    network: chain.name,
+    paymentModule: buildPaymentModuleAddress(networkId),
+    policyVault: buildPolicyVaultAddress(networkId),
+  };
   printHeading('Programmable Secrets Start');
   printField('Network', chain.name);
-  printField('PolicyVault', buildPolicyVaultAddress(networkId));
-  printField('PaymentModule', buildPaymentModuleAddress(networkId));
-  printField('AccessReceipt', buildAccessReceiptAddress(networkId));
+  printField('PolicyVault', payload.policyVault);
+  printField('PaymentModule', payload.paymentModule);
+  printField('AccessReceipt', payload.accessReceipt);
 
   const agentKey = resolveEnvValue('ETH_PK');
   const providerKey = resolveEnvValue('ETH_PK_2');
-  const dockerContainer = resolveDockerContainer();
   printField('Agent key', agentKey.value ? `ready via ${agentKey.source}` : 'missing');
   printField('Provider key', providerKey.value ? `ready via ${providerKey.source}` : 'missing');
-  printField('Docker', dockerContainer || 'not found');
+  printField('Docker', payload.docker);
+  payload.agentKeySource = agentKey.value ? agentKey.source : 'missing';
+  payload.providerKeySource = providerKey.value ? providerKey.source : 'missing';
 
   if (!agentKey.value || !providerKey.value) {
+    if (CLI_RUNTIME.json) {
+      emitResult('start', {
+        ...payload,
+        next: `${CLI_COMMAND} env-bootstrap`,
+        ready: false,
+      });
+      return;
+    }
     printWarning('Operator keys are missing.');
     console.log(`Recommended next step: ${CLI_COMMAND} env-bootstrap`);
     return;
   }
 
+  if (CLI_RUNTIME.json) {
+    emitResult('start', {
+      ...payload,
+      next: [`${CLI_COMMAND} doctor`, `${CLI_COMMAND} flow:direct`, `${CLI_COMMAND} flow:broker`],
+      ready: true,
+    });
+    return;
+  }
   printSuccess('Environment looks ready for live workflow execution.');
   console.log('Recommended next steps:');
   console.log(`  ${CLI_COMMAND} doctor`);
@@ -835,7 +1396,7 @@ async function runStart() {
 
 function normalizePrivateKey(value, label) {
   if (!value) {
-    throw new Error(`${label} is required.`);
+    throw new CliError('MISSING_PRIVATE_KEY', `${label} is required.`);
   }
   return value.startsWith('0x') ? value : `0x${value}`;
 }
@@ -871,21 +1432,32 @@ function getPublicClient(chain) {
 }
 
 function getSelectedNetworkId() {
-  const requestedNetworkId =
-    resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_NETWORK', ['DEMO_ERC8004_NETWORK'], DEFAULT_NETWORK_ID).value;
+  const requestedNetworkId = readOption(
+    CLI_RUNTIME.globalOptions,
+    ['network'],
+    resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_NETWORK', ['DEMO_ERC8004_NETWORK'], DEFAULT_NETWORK_ID).value,
+  );
   const normalizedNetworkId = NETWORK_ALIASES[requestedNetworkId] || requestedNetworkId;
   if (!(normalizedNetworkId in SUPPORTED_NETWORKS)) {
-    throw new Error(
-      `Unsupported PROGRAMMABLE_SECRETS_NETWORK "${requestedNetworkId}". Expected one of: ${Object.keys(
-        SUPPORTED_NETWORKS,
-      ).join(', ')}`,
+    throw new CliError(
+      'UNSUPPORTED_NETWORK',
+      `Unsupported PROGRAMMABLE_SECRETS_NETWORK "${requestedNetworkId}".`,
+      `Expected one of: ${Object.keys(SUPPORTED_NETWORKS).join(', ')}`,
     );
   }
   return normalizedNetworkId;
 }
 
 function getSelectedChain(networkId) {
-  return SUPPORTED_NETWORKS[networkId];
+  const chain = SUPPORTED_NETWORKS[networkId];
+  if (!chain) {
+    throw new CliError(
+      'UNSUPPORTED_NETWORK',
+      `Unsupported network "${networkId}".`,
+      `Use one of: ${Object.keys(SUPPORTED_NETWORKS).join(', ')}`,
+    );
+  }
+  return chain;
 }
 
 function buildPolicyVaultAddress(network) {
@@ -907,8 +1479,10 @@ function buildIdentityRegistryAddress(network) {
 function requireIdentityRegistryAddress(network) {
   const identityRegistryAddress = buildIdentityRegistryAddress(network);
   if (identityRegistryAddress === zeroAddress) {
-    throw new Error(
-      `No ERC-8004 IdentityRegistry is configured for ${network}. Update deployments/${network}.json or switch PROGRAMMABLE_SECRETS_NETWORK.`,
+    throw new CliError(
+      'IDENTITY_REGISTRY_MISSING',
+      `No ERC-8004 IdentityRegistry is configured for ${network}.`,
+      `Update deployments/${network}.json, pass --identity-registry, or switch PROGRAMMABLE_SECRETS_NETWORK.`,
     );
   }
   return identityRegistryAddress;
@@ -989,6 +1563,89 @@ function printReceiptSummary(receiptTokenId, receipt) {
   printField('Key commit', receipt.keyCommitment);
 }
 
+function serializeDataset(datasetId, dataset, policyIds = []) {
+  return {
+    active: dataset.active,
+    ciphertextHash: dataset.ciphertextHash,
+    createdAt: dataset.createdAt,
+    datasetId,
+    keyCommitment: dataset.keyCommitment,
+    metadataHash: dataset.metadataHash,
+    policies: policyIds,
+    provider: dataset.provider,
+    providerUaidHash: dataset.providerUaidHash,
+  };
+}
+
+function serializePolicy(policyId, policy) {
+  return {
+    active: policy.active,
+    agentId: policy.agentId,
+    allowlistEnabled: policy.allowlistEnabled,
+    createdAt: policy.createdAt,
+    ciphertextHash: policy.ciphertextHash,
+    datasetId: policy.datasetId,
+    expiresAt: policy.expiresAt,
+    identityRegistry: policy.identityRegistry,
+    keyCommitment: policy.keyCommitment,
+    metadataHash: policy.metadataHash,
+    paymentToken: policy.paymentToken,
+    payout: policy.payout,
+    policyId,
+    policyType: policy.policyType,
+    priceWei: policy.price,
+    provider: policy.provider,
+    providerUaidHash: policy.providerUaidHash,
+    requiredBuyerUaidHash: policy.requiredBuyerUaidHash,
+  };
+}
+
+function serializeReceipt(receiptTokenId, receipt) {
+  return {
+    buyer: receipt.buyer,
+    ciphertextHash: receipt.ciphertextHash,
+    datasetId: receipt.datasetId,
+    keyCommitment: receipt.keyCommitment,
+    paymentToken: receipt.paymentToken,
+    policyId: receipt.policyId,
+    priceWei: receipt.price,
+    purchasedAt: receipt.purchasedAt,
+    receiptId: receiptTokenId,
+    recipient: receipt.recipient,
+  };
+}
+
+function toHexString(buffer) {
+  return `0x${Buffer.from(buffer).toString('hex')}`;
+}
+
+function parseHexBuffer(value, description) {
+  const trimmed = `${value}`.trim();
+  if (!/^0x[0-9a-fA-F]*$/.test(trimmed) || trimmed.length % 2 !== 0) {
+    throw new CliError('INVALID_HEX', `Invalid ${description}.`, 'Expected a 0x-prefixed even-length hex string.');
+  }
+  return Buffer.from(trimmed.slice(2), 'hex');
+}
+
+function maybeWriteJsonFile(outputPath, payload) {
+  const resolvedPath = resolve(outputPath);
+  writeFileSync(resolvedPath, `${serializeJson(payload)}\n`);
+  return resolvedPath;
+}
+
+function readJsonFile(inputPath, description) {
+  try {
+    return JSON.parse(readFileSync(resolve(inputPath), 'utf8'));
+  } catch (error) {
+    throw new CliError(
+      'JSON_READ_FAILED',
+      `Unable to read ${description} from ${inputPath}.`,
+      'Confirm the file exists and contains valid JSON.',
+      error instanceof Error ? error.message : `${error}`,
+    );
+  }
+}
+
 function zeroHash() {
   return `0x${'0'.repeat(64)}`;
 }
@@ -1038,14 +1695,22 @@ function buildBuyerUaid({ chainId, agentId }) {
 function parseErc8004AgentId(value) {
   const trimmed = `${value ?? ''}`.trim();
   if (!trimmed) {
-    throw new Error('ERC-8004 agent id is required');
+    throw new CliError(
+      'MISSING_AGENT_ID',
+      'ERC-8004 agent id is required.',
+      `Provide --agent-id or rerun ${CLI_COMMAND} identity register with --interactive.`,
+    );
   }
   const candidate = trimmed.includes(':')
     ? trimmed.slice(trimmed.lastIndexOf(':') + 1)
     : trimmed;
   const parsed = Number.parseInt(candidate, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`Unable to parse ERC-8004 agent id from "${trimmed}"`);
+    throw new CliError(
+      'INVALID_AGENT_ID',
+      `Unable to parse ERC-8004 agent id from "${trimmed}".`,
+      'Use a positive integer or a chain-qualified value such as 421614:97.',
+    );
   }
   return parsed;
 }
@@ -1065,7 +1730,11 @@ async function decodeIndexedEvent({ abi, receipt, eventName }) {
   });
 
   if (!log) {
-    throw new Error(`Expected ${eventName} event was not found`);
+    throw new CliError(
+      'EVENT_NOT_FOUND',
+      `Expected ${eventName} event was not found.`,
+      'Inspect the transaction receipt and confirm the contract emitted the expected event.',
+    );
   }
 
   return decodeEventLog({
@@ -1162,8 +1831,10 @@ async function registerBrokerBackedAgent() {
     const availableText = availableNetworks.length > 0
       ? `Available broker networks: ${availableNetworks.join(', ')}.`
       : 'The broker did not return any ERC-8004 networks.';
-    throw new Error(
-      `Registry Broker does not expose ${registryKey}. ${availableText} Update the local registry-broker configuration or switch PROGRAMMABLE_SECRETS_NETWORK to a supported chain.`,
+    throw new CliError(
+      'BROKER_NETWORK_UNAVAILABLE',
+      `Registry Broker does not expose ${registryKey}. ${availableText}`,
+      'Update the local registry-broker configuration or switch PROGRAMMABLE_SECRETS_NETWORK to a supported chain.',
     );
   }
 
@@ -1211,7 +1882,11 @@ async function registerBrokerBackedAgent() {
     }
 
     if (!additionalResult?.agentId) {
-      throw new Error(`Registry Broker registration did not return an ERC-8004 agent id for ${registryKey}.`);
+      throw new CliError(
+        'BROKER_AGENT_ID_MISSING',
+        `Registry Broker registration did not return an ERC-8004 agent id for ${registryKey}.`,
+        'Inspect the registration attempt in the broker and confirm the additional registry completed successfully.',
+      );
     }
 
     return {
@@ -1323,7 +1998,11 @@ function getNetworkIdFromOptions(options) {
   }
   const normalized = normalizeNetworkId(requested);
   if (!(normalized in SUPPORTED_NETWORKS)) {
-    throw new Error(`Unsupported network "${requested}". Expected ${Object.keys(SUPPORTED_NETWORKS).join(', ')}.`);
+    throw new CliError(
+      'UNSUPPORTED_NETWORK',
+      `Unsupported network "${requested}".`,
+      `Expected one of: ${Object.keys(SUPPORTED_NETWORKS).join(', ')}.`,
+    );
   }
   return normalized;
 }
@@ -1335,11 +2014,22 @@ function getChainFromOptions(options) {
 async function showContracts(options) {
   const networkId = getNetworkIdFromOptions(options);
   const chain = getSelectedChain(networkId);
+  const payload = {
+    accessReceipt: buildAccessReceiptAddress(networkId),
+    identityRegistry: buildIdentityRegistryAddress(networkId),
+    network: chain.name,
+    paymentModule: buildPaymentModuleAddress(networkId),
+    policyVault: buildPolicyVaultAddress(networkId),
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('contracts', payload);
+    return;
+  }
   printHeading(`Contracts on ${chain.name}`);
-  printField('PolicyVault', buildPolicyVaultAddress(networkId));
-  printField('PaymentModule', buildPaymentModuleAddress(networkId));
-  printField('AccessReceipt', buildAccessReceiptAddress(networkId));
-  printField('Identity reg', buildIdentityRegistryAddress(networkId));
+  printField('PolicyVault', payload.policyVault);
+  printField('PaymentModule', payload.paymentModule);
+  printField('AccessReceipt', payload.accessReceipt);
+  printField('Identity reg', payload.identityRegistry);
 }
 
 async function listDatasetsCommand(options) {
@@ -1352,6 +2042,8 @@ async function listDatasetsCommand(options) {
     abi: POLICY_VAULT_ABI,
     functionName: 'datasetCount',
   });
+
+  const datasets = [];
 
   printHeading(`Datasets on ${chain.name}`);
   printField('Total', datasetCount);
@@ -1367,8 +2059,26 @@ async function listDatasetsCommand(options) {
     if (providerFilter && dataset.provider.toLowerCase() !== providerFilter.toLowerCase()) {
       continue;
     }
+    const policyIds = await publicClient.readContract({
+      address: policyVaultAddress,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'getDatasetPolicyIds',
+      args: [datasetId],
+    });
+    const serialized = serializeDataset(datasetId, dataset, policyIds);
+    datasets.push(serialized);
+    if (CLI_RUNTIME.json) {
+      continue;
+    }
     console.log('');
     printDatasetSummary(datasetId, dataset);
+  }
+  if (CLI_RUNTIME.json) {
+    emitResult('datasets', {
+      count: datasetCount,
+      items: datasets,
+      network: chain.name,
+    });
   }
 }
 
@@ -1390,7 +2100,14 @@ async function getDatasetCommand(options) {
     functionName: 'getDatasetPolicyIds',
     args: [datasetId],
   });
-
+  const payload = {
+    ...serializeDataset(datasetId, dataset, policyIds),
+    network: chain.name,
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('dataset', payload);
+    return;
+  }
   printHeading(`Dataset ${datasetId} on ${chain.name}`);
   printDatasetSummary(datasetId, dataset);
   printField('Policies', policyIds.length > 0 ? policyIds.join(', ') : 'none');
@@ -1404,6 +2121,21 @@ async function registerDatasetCommand(options) {
   const publicClient = getPublicClient(chain);
   const policyVaultAddress = buildPolicyVaultAddress(networkId);
   const hashes = resolveDatasetRegistrationHashes(options);
+  const preview = {
+    action: 'Register Dataset',
+    address: policyVaultAddress,
+    args: [hashes.ciphertextHash, hashes.keyCommitment, hashes.metadataHash, hashes.providerUaidHash],
+    contract: 'PolicyVault',
+    functionName: 'registerDataset',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} datasets get --dataset-id <dataset-id>`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
 
   const hash = await walletClient.writeContract({
     address: policyVaultAddress,
@@ -1420,11 +2152,17 @@ async function registerDatasetCommand(options) {
     eventName: 'DatasetRegistered',
   });
 
-  printHeading('Dataset Registered');
-  printField('Dataset', event.args.datasetId);
-  printField('Provider', walletClient.account.address);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Dataset Registered',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Dataset',
+    entityValue: event.args.datasetId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} datasets get --dataset-id ${event.args.datasetId}`,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function setDatasetActiveCommand(options) {
@@ -1437,6 +2175,21 @@ async function setDatasetActiveCommand(options) {
     chain,
   });
   const publicClient = getPublicClient(chain);
+  const preview = {
+    action: 'Set Dataset Active',
+    address: buildPolicyVaultAddress(networkId),
+    args: [datasetId, active],
+    contract: 'PolicyVault',
+    functionName: 'setDatasetActive',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} datasets get --dataset-id ${datasetId}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
@@ -1446,11 +2199,19 @@ async function setDatasetActiveCommand(options) {
     account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash });
-  printHeading('Dataset State Updated');
-  printField('Dataset', datasetId);
-  printField('Active', active);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Dataset State Updated',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Dataset',
+    entityValue: datasetId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} datasets get --dataset-id ${datasetId}`,
+    secondaryLabel: 'Active',
+    secondaryValue: active,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function listPoliciesCommand(options) {
@@ -1465,6 +2226,7 @@ async function listPoliciesCommand(options) {
     functionName: 'policyCount',
   });
 
+  const items = [];
   printHeading(`Policies on ${chain.name}`);
   printField('Total', policyCount);
 
@@ -1478,8 +2240,22 @@ async function listPoliciesCommand(options) {
     if (datasetIdFilter && `${policy.datasetId}` !== `${datasetIdFilter}`) {
       continue;
     }
+    items.push({
+      ...serializePolicy(policyId, policy),
+      network: chain.name,
+    });
+    if (CLI_RUNTIME.json) {
+      continue;
+    }
     console.log('');
     printPolicySummary(policyId, policy);
+  }
+  if (CLI_RUNTIME.json) {
+    emitResult('policies', {
+      count: policyCount,
+      items,
+      network: chain.name,
+    });
   }
 }
 
@@ -1494,6 +2270,14 @@ async function getPolicyCommand(options) {
     functionName: 'getPolicy',
     args: [policyId],
   });
+  const payload = {
+    ...serializePolicy(policyId, policy),
+    network: chain.name,
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('policy', payload);
+    return;
+  }
   printHeading(`Policy ${policyId} on ${chain.name}`);
   printPolicySummary(policyId, policy);
 }
@@ -1517,6 +2301,30 @@ async function createTimeboundPolicyCommand(options) {
   const allowlistEnabled = parseBooleanOption(readOption(options, ['allowlist-enabled'], false), false);
   const metadataHash = resolveMetadataHash(options);
   const allowlistAccounts = resolveAllowlistAccounts(options);
+  const preview = {
+    action: 'Create Timebound Policy',
+    address: buildPolicyVaultAddress(networkId),
+    args: [
+      datasetId,
+      payout,
+      zeroAddress,
+      priceWei,
+      expiresAt,
+      allowlistEnabled,
+      metadataHash,
+      allowlistAccounts,
+    ],
+    contract: 'PolicyVault',
+    functionName: 'createTimeboundPolicy',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} policies list --dataset-id ${datasetId}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
@@ -1540,11 +2348,19 @@ async function createTimeboundPolicyCommand(options) {
     receipt,
     eventName: 'PolicyCreated',
   });
-  printHeading('Timebound Policy Created');
-  printField('Policy', event.args.policyId);
-  printField('Dataset', event.args.datasetId);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Timebound Policy Created',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Policy',
+    entityValue: event.args.policyId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${event.args.policyId}`,
+    secondaryLabel: 'Dataset',
+    secondaryValue: event.args.datasetId,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function createUaidPolicyCommand(options) {
@@ -1567,6 +2383,33 @@ async function createUaidPolicyCommand(options) {
   const identityRegistry = getAddress(
     readOption(options, ['identity-registry'], buildIdentityRegistryAddress(networkId)),
   );
+  const preview = {
+    action: 'Create UAID Policy',
+    address: buildPolicyVaultAddress(networkId),
+    args: [
+      datasetId,
+      payout,
+      zeroAddress,
+      priceWei,
+      expiresAt,
+      allowlistEnabled,
+      metadataHash,
+      buildHashFromText(requiredBuyerUaid),
+      identityRegistry,
+      agentId,
+      allowlistAccounts,
+    ],
+    contract: 'PolicyVault',
+    functionName: 'createUaidBoundPolicy',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} policies get --policy-id <policy-id>`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
@@ -1593,11 +2436,19 @@ async function createUaidPolicyCommand(options) {
     receipt,
     eventName: 'PolicyCreated',
   });
-  printHeading('UAID Policy Created');
-  printField('Policy', event.args.policyId);
-  printField('Dataset', event.args.datasetId);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'UAID Policy Created',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Policy',
+    entityValue: event.args.policyId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${event.args.policyId}`,
+    secondaryLabel: 'Dataset',
+    secondaryValue: event.args.datasetId,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function updatePolicyCommand(options) {
@@ -1630,6 +2481,21 @@ async function updatePolicyCommand(options) {
     ? resolveMetadataHash(options)
     : existing.metadataHash;
 
+  const preview = {
+    action: 'Update Policy',
+    address: buildPolicyVaultAddress(networkId),
+    args: [policyId, nextPrice, nextExpiry, active, allowlistEnabled, metadataHash],
+    contract: 'PolicyVault',
+    functionName: 'updatePolicy',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${policyId}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
@@ -1639,10 +2505,17 @@ async function updatePolicyCommand(options) {
     account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash });
-  printHeading('Policy Updated');
-  printField('Policy', policyId);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Policy Updated',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Policy',
+    entityValue: policyId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${policyId}`,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function setPolicyAllowlistCommand(options) {
@@ -1650,7 +2523,11 @@ async function setPolicyAllowlistCommand(options) {
   const accounts = resolveAllowlistAccounts(options);
   const allowed = parseBooleanOption(requireOption(options, 'allowed', 'allowlist state'));
   if (accounts.length === 0) {
-    throw new Error('Provide at least one account with --accounts.');
+    throw new CliError(
+      'MISSING_ALLOWLIST_ACCOUNTS',
+      'Provide at least one account with --accounts.',
+      `Example: ${CLI_COMMAND} policies allowlist --policy-id ${policyId} --accounts 0xabc,0xdef --allowed true`,
+    );
   }
   const networkId = getNetworkIdFromOptions(options);
   const chain = getSelectedChain(networkId);
@@ -1659,6 +2536,21 @@ async function setPolicyAllowlistCommand(options) {
     chain,
   });
   const publicClient = getPublicClient(chain);
+  const preview = {
+    action: 'Update Policy Allowlist',
+    address: buildPolicyVaultAddress(networkId),
+    args: [policyId, accounts, allowed],
+    contract: 'PolicyVault',
+    functionName: 'setAllowlist',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${policyId}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
@@ -1668,12 +2560,19 @@ async function setPolicyAllowlistCommand(options) {
     account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash });
-  printHeading('Policy Allowlist Updated');
-  printField('Policy', policyId);
-  printField('Allowed', allowed);
-  printField('Accounts', accounts.join(', '));
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Policy Allowlist Updated',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Policy',
+    entityValue: policyId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${policyId}`,
+    secondaryLabel: 'Allowed',
+    secondaryValue: allowed,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function purchasePolicyCommand(options) {
@@ -1695,6 +2594,21 @@ async function purchasePolicyCommand(options) {
   });
   const recipient = readOption(options, ['recipient'], zeroAddress);
   const buyerUaid = readOption(options, ['buyer-uaid'], '');
+  const preview = {
+    action: 'Purchase Policy',
+    address: paymentModuleAddress,
+    args: [policyId, recipient === zeroAddress ? zeroAddress : getAddress(recipient), buyerUaid],
+    contract: 'PaymentModule',
+    functionName: 'purchase',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} receipts get --receipt-id <receipt-id>`,
+    valueWei: policy.price,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: paymentModuleAddress,
     abi: PAYMENT_MODULE_ABI,
@@ -1711,12 +2625,20 @@ async function purchasePolicyCommand(options) {
     functionName: 'receiptOfPolicyAndBuyer',
     args: [policyId, walletClient.account.address],
   });
-  printHeading('Policy Purchased');
-  printField('Policy', policyId);
-  printField('Receipt', receiptTokenId);
-  printField('Price', `${formatEther(policy.price)} ETH (${policy.price} wei)`);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Policy Purchased',
+    chain,
+    contract: 'PaymentModule',
+    entityLabel: 'Receipt',
+    entityValue: receiptTokenId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} receipts get --receipt-id ${receiptTokenId}`,
+    secondaryLabel: 'Policy',
+    secondaryValue: policyId,
+    txHash: hash,
+    valueWei: policy.price,
+    wallet: walletClient.account.address,
+  }));
 }
 
 async function accessPolicyCommand(options) {
@@ -1730,6 +2652,11 @@ async function accessPolicyCommand(options) {
     functionName: 'hasAccess',
     args: [policyId, buyer],
   });
+  const payload = { buyer, hasAccess, network: chain.name, policyId };
+  if (CLI_RUNTIME.json) {
+    emitResult('policy-access', payload);
+    return;
+  }
   printHeading('Policy Access');
   printField('Policy', policyId);
   printField('Buyer', buyer);
@@ -1747,6 +2674,11 @@ async function accessDatasetCommand(options) {
     functionName: 'hasDatasetAccess',
     args: [datasetId, buyer],
   });
+  const payload = { buyer, datasetId, hasAccess, network: chain.name };
+  if (CLI_RUNTIME.json) {
+    emitResult('dataset-access', payload);
+    return;
+  }
   printHeading('Dataset Access');
   printField('Dataset', datasetId);
   printField('Buyer', buyer);
@@ -1764,6 +2696,11 @@ async function receiptByPolicyCommand(options) {
     functionName: 'receiptOfPolicyAndBuyer',
     args: [policyId, buyer],
   });
+  const payload = { buyer, network: chain.name, policyId, receiptId: receiptTokenId };
+  if (CLI_RUNTIME.json) {
+    emitResult('receipt-by-policy', payload);
+    return;
+  }
   printHeading('Receipt by Policy');
   printField('Policy', policyId);
   printField('Buyer', buyer);
@@ -1781,6 +2718,11 @@ async function receiptByDatasetCommand(options) {
     functionName: 'receiptOfDatasetAndBuyer',
     args: [datasetId, buyer],
   });
+  const payload = { buyer, datasetId, network: chain.name, receiptId: receiptTokenId };
+  if (CLI_RUNTIME.json) {
+    emitResult('receipt-by-dataset', payload);
+    return;
+  }
   printHeading('Receipt by Dataset');
   printField('Dataset', datasetId);
   printField('Buyer', buyer);
@@ -1797,6 +2739,14 @@ async function getReceiptCommand(options) {
     functionName: 'getReceipt',
     args: [receiptId],
   });
+  const payload = {
+    ...serializeReceipt(receiptId, receipt),
+    network: chain.name,
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('receipt', payload);
+    return;
+  }
   printHeading(`Receipt ${receiptId} on ${chain.name}`);
   printReceiptSummary(receiptId, receipt);
 }
@@ -1809,13 +2759,32 @@ async function registerIdentityCommand(options) {
     readOption(options, ['identity-registry'], buildIdentityRegistryAddress(networkId)),
   );
   if (identityRegistry === zeroAddress) {
-    throw new Error(`No identity registry configured for ${networkId}. Provide --identity-registry.`);
+    throw new CliError(
+      'IDENTITY_REGISTRY_MISSING',
+      `No identity registry configured for ${networkId}.`,
+      'Provide --identity-registry.',
+    );
   }
   const walletClient = getWalletClientForRole({
     role: resolveSelectedWalletRole(options, 'agent'),
     chain,
   });
   const publicClient = getPublicClient(chain);
+  const preview = {
+    action: 'Register ERC-8004 Identity',
+    address: identityRegistry,
+    args: [agentUri],
+    contract: 'IdentityRegistry',
+    functionName: 'register',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} identity register --agent-uri ${agentUri}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
   const hash = await walletClient.writeContract({
     address: identityRegistry,
     abi: IDENTITY_REGISTRY_ABI,
@@ -1830,11 +2799,622 @@ async function registerIdentityCommand(options) {
     receipt,
     eventName: 'Registered',
   });
-  printHeading('Identity Registered');
-  printField('Agent id', event.args.agentId);
-  printField('Owner', walletClient.account.address);
-  printField('Tx', hash);
-  printExplorerLink(chain, hash);
+  printTransactionResult(createTransactionResult({
+    action: 'Identity Registered',
+    chain,
+    contract: 'IdentityRegistry',
+    entityLabel: 'Agent id',
+    entityValue: event.args.agentId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} policies create-uaid --dataset-id <dataset-id> --agent-id ${event.args.agentId} --required-buyer-uaid <uaid>`,
+    secondaryLabel: 'Owner',
+    secondaryValue: walletClient.account.address,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
+}
+
+async function exportDatasetCommand(options) {
+  const datasetId = parseBigIntValue(requireOption(options, 'dataset-id', 'dataset id'), 'dataset-id');
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const dataset = await publicClient.readContract({
+    address: buildPolicyVaultAddress(networkId),
+    abi: POLICY_VAULT_ABI,
+    functionName: 'getDataset',
+    args: [datasetId],
+  });
+  const policyIds = await publicClient.readContract({
+    address: buildPolicyVaultAddress(networkId),
+    abi: POLICY_VAULT_ABI,
+    functionName: 'getDatasetPolicyIds',
+    args: [datasetId],
+  });
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    network: networkId,
+    version: 1,
+    dataset: serializeDataset(datasetId, dataset, policyIds),
+  };
+  const outputPath = resolveOutputPath(options);
+  if (outputPath) {
+    const writtenPath = maybeWriteJsonFile(outputPath, payload);
+    if (CLI_RUNTIME.json) {
+      emitResult('dataset-export', {
+        outputPath: writtenPath,
+        ...payload,
+      });
+      return;
+    }
+    printSuccess(`Wrote dataset export to ${writtenPath}`);
+    return;
+  }
+  emitResult('dataset-export', payload);
+  if (!CLI_RUNTIME.json) {
+    console.log(serializeJson(payload));
+  }
+}
+
+async function importDatasetCommand(options) {
+  const inputPath = requireOption(options, ['file', 'input', 'bundle-file'], 'dataset import file');
+  const payload = readJsonFile(inputPath, 'dataset import');
+  const dataset = payload.dataset || payload;
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const walletClient = getWalletClientForRole({
+    role: resolveSelectedWalletRole(options, 'provider'),
+    chain,
+  });
+  const publicClient = getPublicClient(chain);
+  const args = [
+    normalizeHash(dataset.ciphertextHash, 'ciphertext hash'),
+    normalizeHash(dataset.keyCommitment, 'key commitment'),
+    normalizeHash(dataset.metadataHash, 'metadata hash'),
+    normalizeHash(dataset.providerUaidHash, 'provider UAID hash'),
+  ];
+  const preview = {
+    action: 'Import Dataset',
+    address: buildPolicyVaultAddress(networkId),
+    args,
+    contract: 'PolicyVault',
+    functionName: 'registerDataset',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} datasets list --network ${networkId}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
+  const hash = await walletClient.writeContract({
+    address: buildPolicyVaultAddress(networkId),
+    abi: POLICY_VAULT_ABI,
+    functionName: 'registerDataset',
+    args,
+    chain,
+    account: walletClient.account,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  const event = await decodeIndexedEvent({
+    abi: POLICY_VAULT_ABI,
+    receipt,
+    eventName: 'DatasetRegistered',
+  });
+  printTransactionResult(createTransactionResult({
+    action: 'Dataset Imported',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Dataset',
+    entityValue: event.args.datasetId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} datasets get --dataset-id ${event.args.datasetId}`,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
+}
+
+async function exportPolicyCommand(options) {
+  const policyId = parseBigIntValue(requireOption(options, 'policy-id', 'policy id'), 'policy-id');
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const policy = await publicClient.readContract({
+    address: buildPolicyVaultAddress(networkId),
+    abi: POLICY_VAULT_ABI,
+    functionName: 'getPolicy',
+    args: [policyId],
+  });
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    network: networkId,
+    version: 1,
+    policy: serializePolicy(policyId, policy),
+  };
+  const outputPath = resolveOutputPath(options);
+  if (outputPath) {
+    const writtenPath = maybeWriteJsonFile(outputPath, payload);
+    if (CLI_RUNTIME.json) {
+      emitResult('policy-export', {
+        outputPath: writtenPath,
+        ...payload,
+      });
+      return;
+    }
+    printSuccess(`Wrote policy export to ${writtenPath}`);
+    return;
+  }
+  emitResult('policy-export', payload);
+  if (!CLI_RUNTIME.json) {
+    console.log(serializeJson(payload));
+  }
+}
+
+async function importPolicyCommand(options) {
+  const inputPath = requireOption(options, ['file', 'input'], 'policy import file');
+  const payload = readJsonFile(inputPath, 'policy import');
+  const policy = payload.policy || payload;
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const walletClient = getWalletClientForRole({
+    role: resolveSelectedWalletRole(options, 'provider'),
+    chain,
+  });
+  const publicClient = getPublicClient(chain);
+  const datasetId = parseBigIntValue(`${policy.datasetId}`, 'dataset id');
+  const payout = getAddress(policy.payout || walletClient.account.address);
+  const priceWei = parseBigIntValue(`${policy.priceWei ?? policy.price ?? 0}`, 'price');
+  const expiresAt = parseBigIntValue(`${policy.expiresAt ?? 0}`, 'expiresAt');
+  const metadataHash = normalizeHash(policy.metadataHash, 'metadata hash');
+  const allowlistAccounts = policy.allowlistAccounts ? policy.allowlistAccounts.map((entry) => getAddress(entry)) : [];
+  const allowlistEnabled = Boolean(policy.allowlistEnabled);
+  const policyTypeLabel = decodePolicyTypeLabel(policy.policyType || zeroHash());
+  if (policyTypeLabel === 'unknown') {
+    throw new CliError(
+      'POLICY_IMPORT_UNSUPPORTED',
+      'Unable to infer policy type from import payload.',
+      'Use an exported policy file or set policy.policyType to the exported onchain value.',
+    );
+  }
+
+  if (policyTypeLabel === 'timebound') {
+    const args = [datasetId, payout, zeroAddress, priceWei, expiresAt, allowlistEnabled, metadataHash, allowlistAccounts];
+    const preview = {
+      action: 'Import Timebound Policy',
+      address: buildPolicyVaultAddress(networkId),
+      args,
+      contract: 'PolicyVault',
+      functionName: 'createTimeboundPolicy',
+      network: chain.name,
+      nextCommand: `${CLI_COMMAND} policies list --dataset-id ${datasetId}`,
+      valueWei: 0n,
+      wallet: walletClient.account.address,
+    };
+    if (shouldPreview(options)) {
+      emitPreview(preview);
+      return;
+    }
+    const hash = await walletClient.writeContract({
+      address: buildPolicyVaultAddress(networkId),
+      abi: POLICY_VAULT_ABI,
+      functionName: 'createTimeboundPolicy',
+      args,
+      chain,
+      account: walletClient.account,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    const event = await decodeIndexedEvent({
+      abi: POLICY_VAULT_ABI,
+      receipt,
+      eventName: 'PolicyCreated',
+    });
+    printTransactionResult(createTransactionResult({
+      action: 'Policy Imported',
+      chain,
+      contract: 'PolicyVault',
+      entityLabel: 'Policy',
+      entityValue: event.args.policyId,
+      explorerUrl: buildExplorerUrl(chain, hash),
+      nextCommand: `${CLI_COMMAND} policies get --policy-id ${event.args.policyId}`,
+      secondaryLabel: 'Dataset',
+      secondaryValue: event.args.datasetId,
+      txHash: hash,
+      wallet: walletClient.account.address,
+    }));
+    return;
+  }
+
+  const requiredBuyerUaidHash = policy.requiredBuyerUaid
+    ? buildHashFromText(policy.requiredBuyerUaid)
+    : normalizeHash(policy.requiredBuyerUaidHash, 'required buyer UAID hash');
+  const identityRegistry = getAddress(policy.identityRegistry || buildIdentityRegistryAddress(networkId));
+  const agentId = parseBigIntValue(`${policy.agentId}`, 'agent id');
+  const args = [
+    datasetId,
+    payout,
+    zeroAddress,
+    priceWei,
+    expiresAt,
+    allowlistEnabled,
+    metadataHash,
+    requiredBuyerUaidHash,
+    identityRegistry,
+    agentId,
+    allowlistAccounts,
+  ];
+  const preview = {
+    action: 'Import UAID Policy',
+    address: buildPolicyVaultAddress(networkId),
+    args,
+    contract: 'PolicyVault',
+    functionName: 'createUaidBoundPolicy',
+    network: chain.name,
+    nextCommand: `${CLI_COMMAND} policies list --dataset-id ${datasetId}`,
+    valueWei: 0n,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
+  const hash = await walletClient.writeContract({
+    address: buildPolicyVaultAddress(networkId),
+    abi: POLICY_VAULT_ABI,
+    functionName: 'createUaidBoundPolicy',
+    args,
+    chain,
+    account: walletClient.account,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  const event = await decodeIndexedEvent({
+    abi: POLICY_VAULT_ABI,
+    receipt,
+    eventName: 'PolicyCreated',
+  });
+  printTransactionResult(createTransactionResult({
+    action: 'Policy Imported',
+    chain,
+    contract: 'PolicyVault',
+    entityLabel: 'Policy',
+    entityValue: event.args.policyId,
+    explorerUrl: buildExplorerUrl(chain, hash),
+    nextCommand: `${CLI_COMMAND} policies get --policy-id ${event.args.policyId}`,
+    secondaryLabel: 'Dataset',
+    secondaryValue: event.args.datasetId,
+    txHash: hash,
+    wallet: walletClient.account.address,
+  }));
+}
+
+function resolvePlaintextBuffer(options) {
+  const plaintext = readOption(options, ['plaintext'], null);
+  if (plaintext !== null) {
+    return Buffer.from(plaintext, 'utf8');
+  }
+  const filePath = readOption(options, ['plaintext-file', 'file'], null);
+  if (filePath !== null) {
+    return readFileSync(resolve(filePath));
+  }
+  throw new CliError(
+    'MISSING_PLAINTEXT',
+    'Missing plaintext payload.',
+    `Provide --plaintext or --plaintext-file, or rerun ${CLI_COMMAND} krs encrypt with --interactive.`,
+  );
+}
+
+function buildBundlePayload(options) {
+  const plaintextBuffer = resolvePlaintextBuffer(options);
+  const encryptedPayload = encryptPayload(plaintextBuffer);
+  const title = readOption(options, ['title'], 'Programmable Secrets bundle');
+  const metadataJson = readOption(options, ['metadata-json'], JSON.stringify({ title }));
+  const metadataHash = buildHashFromText(metadataJson);
+  const providerUaid = readOption(options, ['provider-uaid'], 'did:uaid:hol:provider');
+  return {
+    bundle: {
+      contentKeyHex: toHexString(encryptedPayload.contentKey),
+      ciphertextHex: toHexString(encryptedPayload.ciphertext),
+      ciphertextHash: keccak256(`0x${encryptedPayload.ciphertext.toString('hex')}`),
+      ivHex: toHexString(encryptedPayload.iv),
+      keyCommitment: keccak256(`0x${encryptedPayload.contentKey.toString('hex')}`),
+      metadata: JSON.parse(metadataJson),
+      metadataHash,
+      plaintextHash: sha256Hex(plaintextBuffer),
+      plaintextPreview: plaintextBuffer.toString('utf8').slice(0, 140),
+      providerUaid,
+      providerUaidHash: buildHashFromText(providerUaid),
+      title,
+      version: 1,
+    },
+  };
+}
+
+async function encryptBundleCommand(options) {
+  const payload = buildBundlePayload(options);
+  const outputPath = resolveOutputPath(options);
+  if (outputPath) {
+    const writtenPath = maybeWriteJsonFile(outputPath, payload);
+    if (CLI_RUNTIME.json) {
+      emitResult('krs-encrypt', {
+        outputPath: writtenPath,
+        ...payload,
+      });
+      return;
+    }
+    printSuccess(`Wrote encrypted bundle to ${writtenPath}`);
+    return;
+  }
+  emitResult('krs-encrypt', payload);
+  if (!CLI_RUNTIME.json) {
+    console.log(serializeJson(payload));
+  }
+}
+
+async function decryptBundleCommand(options) {
+  const inputPath = requireOption(options, ['bundle-file', 'file', 'input'], 'bundle file');
+  const payload = readJsonFile(inputPath, 'bundle file');
+  const bundle = payload.bundle || payload;
+  const plaintext = decryptPayload({
+    ciphertext: parseHexBuffer(bundle.ciphertextHex, 'ciphertext hex'),
+    contentKey: parseHexBuffer(bundle.contentKeyHex, 'content key hex'),
+    iv: parseHexBuffer(bundle.ivHex, 'iv hex'),
+  });
+  const outputPath = resolveOutputPath(options);
+  if (outputPath) {
+    const resolvedPath = resolve(outputPath);
+    writeFileSync(resolvedPath, plaintext);
+    if (CLI_RUNTIME.json) {
+      emitResult('krs-decrypt', {
+        outputPath: resolvedPath,
+        plaintextBytes: plaintext.length,
+      });
+      return;
+    }
+    printSuccess(`Wrote decrypted payload to ${resolvedPath}`);
+    return;
+  }
+  const plaintextText = plaintext.toString('utf8');
+  emitResult('krs-decrypt', {
+    plaintext: plaintextText,
+    plaintextBytes: plaintext.length,
+  });
+  if (!CLI_RUNTIME.json) {
+    console.log(plaintextText);
+  }
+}
+
+async function verifyBundleCommand(options) {
+  const inputPath = requireOption(options, ['bundle-file', 'file', 'input'], 'bundle file');
+  const payload = readJsonFile(inputPath, 'bundle file');
+  const bundle = payload.bundle || payload;
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const result = {
+    access: null,
+    bundleCiphertextHash: bundle.ciphertextHash,
+    bundleKeyCommitment: bundle.keyCommitment,
+    matchesOnChain: null,
+    network: chain.name,
+  };
+
+  const policyIdValue = readOption(options, ['policy-id'], null);
+  if (policyIdValue !== null) {
+    const policyId = parseBigIntValue(policyIdValue, 'policy id');
+    const policy = await publicClient.readContract({
+      address: buildPolicyVaultAddress(networkId),
+      abi: POLICY_VAULT_ABI,
+      functionName: 'getPolicy',
+      args: [policyId],
+    });
+    result.policy = serializePolicy(policyId, policy);
+    result.matchesOnChain = policy.ciphertextHash === bundle.ciphertextHash
+      && policy.keyCommitment === bundle.keyCommitment;
+    const buyerValue = readOption(options, ['buyer'], null);
+    if (buyerValue !== null) {
+      const buyer = getAddress(buyerValue);
+      result.access = await publicClient.readContract({
+        address: buildPaymentModuleAddress(networkId),
+        abi: PAYMENT_MODULE_ABI,
+        functionName: 'hasAccess',
+        args: [policyId, buyer],
+      });
+      result.buyer = buyer;
+    }
+  }
+
+  const receiptIdValue = readOption(options, ['receipt-id'], null);
+  if (receiptIdValue !== null) {
+    const receiptId = parseBigIntValue(receiptIdValue, 'receipt id');
+    const receipt = await publicClient.readContract({
+      address: buildAccessReceiptAddress(networkId),
+      abi: ACCESS_RECEIPT_ABI,
+      functionName: 'getReceipt',
+      args: [receiptId],
+    });
+    result.receipt = serializeReceipt(receiptId, receipt);
+    result.matchesReceipt = receipt.ciphertextHash === bundle.ciphertextHash
+      && receipt.keyCommitment === bundle.keyCommitment;
+  }
+
+  emitResult('krs-verify', result);
+  if (!CLI_RUNTIME.json) {
+    console.log(serializeJson(result));
+  }
+}
+
+async function runInitCommand(options) {
+  const force = parseBooleanOption(readOption(options, ['force'], false), false);
+  const wroteConfig = !existsSync(CLI_CONFIG_PATH);
+  if (wroteConfig || force) {
+    writeCliConfig(getDefaultConfig(), CLI_CONFIG_PATH, force);
+  }
+  const shell = readOption(options, ['write-completion'], null);
+  let completionPath = null;
+  if (shell) {
+    completionPath = resolve(resolveOutputPath(options, `${CLI_COMMAND}.${shell}`));
+    writeFileSync(completionPath, `${renderCompletionScript(shell)}\n`);
+  }
+  const payload = {
+    completionPath,
+    configPath: CLI_CONFIG_PATH,
+    envBootstrapSuggested: !existsSync(DEFAULT_ENV_OUTPUT_PATH),
+    wroteConfig: wroteConfig || force,
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('init', payload);
+    return;
+  }
+  printHeading('Programmable Secrets Init');
+  printField('Config', CLI_CONFIG_PATH);
+  printField('Completion', completionPath || 'not requested');
+  printField('Env bootstrap', payload.envBootstrapSuggested ? `${CLI_COMMAND} env-bootstrap` : 'already present');
+  printField('Next', `${CLI_COMMAND} doctor`);
+}
+
+async function runProfilesCommand(tokens) {
+  const { positionals, options } = parseCliArgs(tokens);
+  const subcommand = positionals[0] || 'list';
+  const config = loadCliConfig();
+  if (subcommand === 'init') {
+    const force = parseBooleanOption(readOption(options, ['force'], false), false);
+    writeCliConfig(getDefaultConfig(), CLI_CONFIG_PATH, force);
+    if (CLI_RUNTIME.json) {
+      emitResult('profiles-init', {
+        configPath: CLI_CONFIG_PATH,
+      });
+      return;
+    }
+    printSuccess(`Wrote sample profiles to ${CLI_CONFIG_PATH}`);
+    return;
+  }
+  if (subcommand === 'show') {
+    const profileName = readOption(options, ['profile'], CLI_RUNTIME.profileName || config.defaultProfile);
+    const profile = config.profiles?.[profileName];
+    if (!profile) {
+      throw new CliError('PROFILE_MISSING', `Profile "${profileName}" was not found.`, `Run ${CLI_COMMAND} profiles list.`);
+    }
+    emitResult('profile', {
+      name: profileName,
+      profile,
+    });
+    if (!CLI_RUNTIME.json) {
+      console.log(serializeJson({
+        name: profileName,
+        profile,
+      }));
+    }
+    return;
+  }
+  emitResult('profiles', {
+    configPath: CLI_CONFIG_PATH,
+    defaultProfile: config.defaultProfile,
+    profiles: config.profiles,
+  });
+  if (!CLI_RUNTIME.json) {
+    console.log(serializeJson({
+      configPath: CLI_CONFIG_PATH,
+      defaultProfile: config.defaultProfile,
+      profiles: config.profiles,
+    }));
+  }
+}
+
+async function runTemplatesCommand(tokens) {
+  const { positionals, options } = parseCliArgs(tokens);
+  const subcommand = positionals[0] || 'list';
+  if (subcommand === 'list') {
+    emitResult('templates', {
+      templates: TEMPLATE_REGISTRY,
+    });
+    if (!CLI_RUNTIME.json) {
+      console.log(serializeJson(TEMPLATE_REGISTRY));
+    }
+    return;
+  }
+  const templateName = requireOption(options, ['name', 'template'], 'template name');
+  const template = TEMPLATE_REGISTRY[templateName];
+  if (!template) {
+    throw new CliError(
+      'TEMPLATE_MISSING',
+      `Unknown template "${templateName}".`,
+      `Use ${CLI_COMMAND} templates list.`,
+    );
+  }
+  if (subcommand === 'write') {
+    const outputPath = resolveOutputPath(options, `${templateName}.json`);
+    const writtenPath = maybeWriteJsonFile(outputPath, template);
+    if (CLI_RUNTIME.json) {
+      emitResult('template-write', {
+        outputPath: writtenPath,
+        template: templateName,
+      });
+      return;
+    }
+    printSuccess(`Wrote template to ${writtenPath}`);
+    return;
+  }
+  emitResult('template', {
+    name: templateName,
+    template,
+  });
+  if (!CLI_RUNTIME.json) {
+    console.log(serializeJson({
+      name: templateName,
+      template,
+    }));
+  }
+}
+
+function renderCompletionScript(shell) {
+  const topLevel = Object.keys(COMMAND_TREE).sort();
+  const functionName = `_${CLI_COMMAND.replace(/-/g, '_')}_completions`;
+  if (shell === 'bash') {
+    return `${functionName}() {\n  local cur prev words cword\n  _init_completion || return\n  if [[ $cword -eq 1 ]]; then\n    COMPREPLY=( $(compgen -W "${topLevel.join(' ')}" -- "$cur") )\n    return\n  fi\n  case "\${words[1]}" in\n${topLevel
+    .map((commandName) => `    ${commandName}) COMPREPLY=( $(compgen -W "${(COMMAND_TREE[commandName] || []).join(' ')}" -- "$cur") ); return ;;`)
+    .join('\n')}\n  esac\n}\ncomplete -F ${functionName} ${CLI_COMMAND} ${CLI_ALIAS}`;
+  }
+  if (shell === 'zsh') {
+    return `#compdef ${CLI_COMMAND} ${CLI_ALIAS}\n_arguments '1:command:(${topLevel.join(' ')})' '2:subcommand:->subcmds'\ncase $words[2] in\n${topLevel
+    .map((commandName) => `  ${commandName}) _values 'subcommand' ${(COMMAND_TREE[commandName] || []).join(' ')} ;;`)
+    .join('\n')}\nesac`;
+  }
+  if (shell === 'fish') {
+    return topLevel
+      .map((commandName) => `complete -c ${CLI_COMMAND} -f -n '__fish_use_subcommand' -a '${commandName}'`)
+      .concat(
+        topLevel.flatMap((commandName) => (COMMAND_TREE[commandName] || []).map(
+          (subcommand) => `complete -c ${CLI_COMMAND} -f -n '__fish_seen_subcommand_from ${commandName}' -a '${subcommand}'`,
+        )),
+      )
+      .join('\n');
+  }
+  throw new CliError(
+    'UNSUPPORTED_SHELL',
+    `Unsupported shell "${shell}".`,
+    'Use bash, zsh, or fish.',
+  );
+}
+
+async function runCompletionsCommand(tokens) {
+  const { positionals, options } = parseCliArgs(tokens);
+  const shell = positionals[0] || readOption(options, ['shell'], 'zsh');
+  const script = renderCompletionScript(shell);
+  const outputPath = resolveOutputPath(options);
+  if (outputPath) {
+    const resolvedPath = resolve(outputPath);
+    writeFileSync(resolvedPath, `${script}\n`);
+    if (CLI_RUNTIME.json) {
+      emitResult('completions', {
+        outputPath: resolvedPath,
+        shell,
+      });
+      return;
+    }
+    printSuccess(`Wrote ${shell} completions to ${resolvedPath}`);
+    return;
+  }
+  console.log(script);
 }
 
 async function updatePrices() {
@@ -2140,6 +3720,19 @@ async function demoUaidFlow() {
   printField('Receipt buyer', result.receipt.buyer);
   printField('Receipt policy', result.receipt.policyId);
   printField('Decrypted bytes', Buffer.byteLength(result.decryptedPlaintext, 'utf8'));
+  if (CLI_RUNTIME.json) {
+    emitResult('flow-direct', {
+      datasetId: result.datasetId,
+      decryptedPlaintext: result.decryptedPlaintext,
+      hasAccess: result.hasAccess,
+      network: chain.name,
+      policyId: result.policyId,
+      purchaseTx: result.purchaseTx,
+      receipt: serializeReceipt(result.receiptTokenId, result.receipt),
+      registerTx,
+    });
+    return;
+  }
   console.log(result.decryptedPlaintext);
   printSuccess('Direct identity flow completed.');
 }
@@ -2207,6 +3800,21 @@ async function demoBrokerUaidFlow() {
     printField('Has access', result.hasAccess);
     printField('Receipt buyer', result.receipt.buyer);
     printField('Receipt policy', result.receipt.policyId);
+    if (CLI_RUNTIME.json) {
+      emitResult('flow-broker', {
+        brokerAgentId: brokerRegistration.brokerAgentId,
+        brokerUaid: brokerRegistration.brokerUaid,
+        datasetId: result.datasetId,
+        decryptedPlaintext: result.decryptedPlaintext,
+        erc8004AgentId: brokerRegistration.erc8004AgentId,
+        hasAccess: result.hasAccess,
+        network: chain.name,
+        policyId: result.policyId,
+        purchaseTx: result.purchaseTx,
+        receipt: serializeReceipt(result.receiptTokenId, result.receipt),
+      });
+      return;
+    }
     console.log(result.decryptedPlaintext);
     printSuccess('Broker-backed identity flow completed.');
   } finally {
@@ -2217,12 +3825,19 @@ async function demoBrokerUaidFlow() {
 async function runDatasetsCommand(tokens) {
   const { positionals, options } = parseCliArgs(tokens);
   const subcommand = positionals[0] || 'list';
+  await completeInteractiveOptions('datasets', subcommand, options);
   switch (subcommand) {
     case 'list':
       await listDatasetsCommand(options);
       return;
     case 'get':
       await getDatasetCommand(options);
+      return;
+    case 'export':
+      await exportDatasetCommand(options);
+      return;
+    case 'import':
+      await importDatasetCommand(options);
       return;
     case 'register':
       await registerDatasetCommand(options);
@@ -2231,19 +3846,30 @@ async function runDatasetsCommand(tokens) {
       await setDatasetActiveCommand(options);
       return;
     default:
-      throw new Error(`Unknown datasets command "${subcommand}". See "${CLI_COMMAND} help datasets".`);
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown datasets command "${subcommand}".`,
+        `See "${CLI_COMMAND} help datasets".`,
+      );
   }
 }
 
 async function runPoliciesCommand(tokens) {
   const { positionals, options } = parseCliArgs(tokens);
   const subcommand = positionals[0] || 'list';
+  await completeInteractiveOptions('policies', subcommand, options);
   switch (subcommand) {
     case 'list':
       await listPoliciesCommand(options);
       return;
     case 'get':
       await getPolicyCommand(options);
+      return;
+    case 'export':
+      await exportPolicyCommand(options);
+      return;
+    case 'import':
+      await importPolicyCommand(options);
       return;
     case 'create-timebound':
       await createTimeboundPolicyCommand(options);
@@ -2258,7 +3884,11 @@ async function runPoliciesCommand(tokens) {
       await setPolicyAllowlistCommand(options);
       return;
     default:
-      throw new Error(`Unknown policies command "${subcommand}". See "${CLI_COMMAND} help policies".`);
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown policies command "${subcommand}".`,
+        `See "${CLI_COMMAND} help policies".`,
+      );
   }
 }
 
@@ -2279,7 +3909,11 @@ async function runAccessCommand(tokens) {
       await receiptByDatasetCommand(options);
       return;
     default:
-      throw new Error(`Unknown access command "${subcommand}". See "${CLI_COMMAND} help access".`);
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown access command "${subcommand}".`,
+        `See "${CLI_COMMAND} help access".`,
+      );
   }
 }
 
@@ -2291,19 +3925,132 @@ async function runReceiptsCommand(tokens) {
       await getReceiptCommand(options);
       return;
     default:
-      throw new Error(`Unknown receipts command "${subcommand}". See "${CLI_COMMAND} help receipts".`);
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown receipts command "${subcommand}".`,
+        `See "${CLI_COMMAND} help receipts".`,
+      );
   }
 }
 
 async function runIdentityCommand(tokens) {
   const { positionals, options } = parseCliArgs(tokens);
   const subcommand = positionals[0] || 'register';
+  await completeInteractiveOptions('identity', subcommand, options);
   switch (subcommand) {
     case 'register':
       await registerIdentityCommand(options);
       return;
     default:
-      throw new Error(`Unknown identity command "${subcommand}". See "${CLI_COMMAND} help identity".`);
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown identity command "${subcommand}".`,
+        `See "${CLI_COMMAND} help identity".`,
+      );
+  }
+}
+
+async function runKrsCommand(tokens) {
+  const { positionals, options } = parseCliArgs(tokens);
+  const subcommand = positionals[0] || 'encrypt';
+  await completeInteractiveOptions('krs', subcommand, options);
+  switch (subcommand) {
+    case 'encrypt':
+      await encryptBundleCommand(options);
+      return;
+    case 'decrypt':
+      await decryptBundleCommand(options);
+      return;
+    case 'verify':
+      await verifyBundleCommand(options);
+      return;
+    default:
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown krs command "${subcommand}".`,
+        `See "${CLI_COMMAND} help krs".`,
+      );
+  }
+}
+
+async function dispatchCommand(commandName, tokens, forcePreview = false) {
+  const effectiveTokens = forcePreview && !tokens.includes('--preview') ? [...tokens, '--preview'] : tokens;
+  const parsed = parseCliArgs(effectiveTokens);
+  if (forcePreview) {
+    parsed.options.preview = true;
+  }
+
+  switch (commandName) {
+    case 'start':
+      await runStart();
+      return;
+    case 'doctor':
+      await runDoctor();
+      return;
+    case 'init':
+      await runInitCommand(parsed.options);
+      return;
+    case 'env-bootstrap':
+      writeBootstrapEnvFile();
+      return;
+    case 'list':
+      await listPolicies();
+      return;
+    case 'deactivate-all':
+      await deactivateAll();
+      return;
+    case 'update-prices':
+      await updatePrices();
+      return;
+    case 'flow:direct':
+      await demoUaidFlow();
+      return;
+    case 'flow:broker':
+      await demoBrokerUaidFlow();
+      return;
+    case 'contracts':
+      await showContracts(parsed.options);
+      return;
+    case 'datasets':
+      await runDatasetsCommand(effectiveTokens);
+      return;
+    case 'policies':
+      await runPoliciesCommand(effectiveTokens);
+      return;
+    case 'purchase':
+      await completeInteractiveOptions('purchase', null, parsed.options);
+      await purchasePolicyCommand(parsed.options);
+      return;
+    case 'access':
+      await runAccessCommand(effectiveTokens);
+      return;
+    case 'receipts':
+      await runReceiptsCommand(effectiveTokens);
+      return;
+    case 'identity':
+      await runIdentityCommand(effectiveTokens);
+      return;
+    case 'profiles':
+      await runProfilesCommand(effectiveTokens);
+      return;
+    case 'templates':
+      await runTemplatesCommand(effectiveTokens);
+      return;
+    case 'completions':
+      await runCompletionsCommand(effectiveTokens);
+      return;
+    case 'krs':
+      await runKrsCommand(effectiveTokens);
+      return;
+    case 'help':
+      showHelp(parsed.positionals[0] || null);
+      return;
+    default:
+      throw new CliError(
+        'UNKNOWN_COMMAND',
+        `Unknown command: ${commandName}`,
+        `Run "${CLI_COMMAND} help".`,
+      );
   }
 }
 
@@ -2311,58 +4058,40 @@ async function runIdentityCommand(tokens) {
 const rawArgs = process.argv.slice(2).filter((value) => value !== '--');
 const command = rawArgs[0] || 'start';
 const commandArgs = rawArgs.slice(1);
-const commandArg = commandArgs[0] || null;
+const globalOptions = parseCliArgs(rawArgs).options;
+initializeRuntime(globalOptions, command);
 
-switch (command) {
-  case 'start':
-    await runStart();
-    break;
-  case 'doctor':
-    await runDoctor();
-    break;
-  case 'env-bootstrap':
-    writeBootstrapEnvFile();
-    break;
-  case 'list':
-    await listPolicies();
-    break;
-  case 'deactivate-all':
-    await deactivateAll();
-    break;
-  case 'update-prices':
-    await updatePrices();
-    break;
-  case 'flow:direct':
-    await demoUaidFlow();
-    break;
-  case 'flow:broker':
-    await demoBrokerUaidFlow();
-    break;
-  case 'contracts':
-    await showContracts(parseCliArgs(commandArgs).options);
-    break;
-  case 'datasets':
-    await runDatasetsCommand(commandArgs);
-    break;
-  case 'policies':
-    await runPoliciesCommand(commandArgs);
-    break;
-  case 'purchase':
-    await purchasePolicyCommand(parseCliArgs(commandArgs).options);
-    break;
-  case 'access':
-    await runAccessCommand(commandArgs);
-    break;
-  case 'receipts':
-    await runReceiptsCommand(commandArgs);
-    break;
-  case 'identity':
-    await runIdentityCommand(commandArgs);
-    break;
-  case 'help':
-    showHelp(commandArg);
-    break;
-  default:
-    console.log(`Unknown command: ${command}`);
-    showHelp();
+try {
+  if (command === 'preview' || command === 'explain') {
+    const previewCommand = commandArgs[0];
+    if (!previewCommand) {
+      throw new CliError(
+        'MISSING_OPTION',
+        `Missing command after ${command}.`,
+        `Use "${CLI_COMMAND} ${command} purchase --policy-id 1".`,
+      );
+    }
+    await dispatchCommand(previewCommand, commandArgs.slice(1), true);
+  } else {
+    await dispatchCommand(command, commandArgs);
+  }
+} catch (error) {
+  const normalized = error instanceof CliError
+    ? error
+    : new CliError('UNEXPECTED_ERROR', error instanceof Error ? error.message : `${error}`);
+  if (CLI_RUNTIME.json) {
+    emitJson({
+      code: normalized.code,
+      details: normalized.details || null,
+      error: normalized.message,
+      remediation: normalized.remediation || null,
+      timestamp: new Date().toISOString(),
+    });
+  } else {
+    console.error(`\n[error] ${normalized.code}: ${normalized.message}`);
+    if (normalized.remediation) {
+      console.error(`[hint] ${normalized.remediation}`);
+    }
+  }
+  process.exitCode = 1;
 }

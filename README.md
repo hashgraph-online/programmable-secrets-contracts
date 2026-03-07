@@ -198,7 +198,7 @@ npx programmable-secret help
 
 Release automation:
 
-- GitHub release tags must match the package version, for example `v0.1.0`
+- GitHub release tags must match the package version, for example `v0.2.0`
 - `.github/workflows/publish-cli.yml` validates the package, smoke-tests the tarball, and publishes to npm with provenance
 - manual dry-runs are available through the `Publish CLI Package` workflow dispatch
 
@@ -228,6 +228,7 @@ npx programmable-secret help
 Start with the guided entrypoint:
 
 ```bash
+programmable-secret init
 programmable-secret start
 ```
 
@@ -290,6 +291,14 @@ By default both workflows use Robinhood testnet. Set `PROGRAMMABLE_SECRETS_NETWO
 
 If you want to point at a different env file, set `PROGRAMMABLE_SECRETS_ENV_PATH` before running the command.
 
+Global operator flags:
+
+- `--json` for machine-readable output
+- `--preview` or `preview <command>` to inspect state-changing calls before sending them
+- `--interactive` to prompt for missing required options
+- `--profile <name>` to load a named operator profile
+- `--agent-safe` to enable JSON-first, quiet, non-interactive execution defaults
+
 ## Contract Commands
 
 The CLI now covers the full operator surface around the deployed contracts.
@@ -298,10 +307,13 @@ Read-only commands:
 
 ```bash
 programmable-secret contracts
+programmable-secret help --json
 programmable-secret datasets list
 programmable-secret datasets get --dataset-id 1
+programmable-secret datasets export --dataset-id 1 --output dataset-1.json
 programmable-secret policies list
 programmable-secret policies get --policy-id 1
+programmable-secret policies export --policy-id 1 --output policy-1.json
 programmable-secret access policy --policy-id 1 --buyer 0x...
 programmable-secret access dataset --dataset-id 1 --buyer 0x...
 programmable-secret receipts get --receipt-id 1
@@ -312,9 +324,11 @@ Write commands:
 ```bash
 programmable-secret identity register --agent-uri https://hol.org/agents/volatility-trading-agent-custodian
 programmable-secret datasets register --provider-uaid "did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab" --metadata-json '{"title":"TSLA feed"}' --ciphertext "encrypted payload" --key-material "wrapped key"
+programmable-secret datasets import --file dataset-1.json
 programmable-secret datasets set-active --dataset-id 1 --active false
 programmable-secret policies create-timebound --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --metadata-json '{"title":"24 hour access"}'
 programmable-secret policies create-uaid --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --required-buyer-uaid uaid:aid:... --agent-id 97
+programmable-secret policies import --file policy-1.json
 programmable-secret policies update --policy-id 1 --price-eth 0.00002 --active true --metadata-json '{"title":"Updated access"}'
 programmable-secret policies allowlist --policy-id 1 --accounts 0xabc,0xdef --allowed true
 programmable-secret purchase --policy-id 1
@@ -330,6 +344,44 @@ Wallet selection:
 - provider-facing write commands default to `ETH_PK_2`
 - agent-facing commands default to `ETH_PK`
 - override with `--wallet provider` or `--wallet agent`
+
+## Profiles, Templates, and Completions
+
+Bootstrap a local config with named profiles:
+
+```bash
+programmable-secret init
+programmable-secret profiles list
+programmable-secret profiles show --profile robinhood-agent
+```
+
+Use built-in templates to scaffold finance-agent flows:
+
+```bash
+programmable-secret templates list
+programmable-secret templates show --name finance-timebound-dataset
+programmable-secret templates write --name finance-uaid-policy --output finance-uaid-policy.json
+```
+
+Generate shell completions:
+
+```bash
+programmable-secret completions zsh --output ~/.zsh/completions/_programmable-secret
+programmable-secret completions bash
+programmable-secret completions fish
+```
+
+## Local KRS Helpers
+
+The CLI now includes local bundle tooling for operator previews and end-to-end verification:
+
+```bash
+programmable-secret krs encrypt --plaintext '{"signal":"buy","market":"TSLA"}' --output bundle.json
+programmable-secret krs verify --bundle-file bundle.json --policy-id 1 --buyer 0x...
+programmable-secret krs decrypt --bundle-file bundle.json
+```
+
+These commands are local-only helpers. They are meant for operator testing, payload preparation, and buyer-side verification, not for production secret custody.
 
 ## Deployment
 
