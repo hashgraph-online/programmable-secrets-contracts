@@ -140,7 +140,9 @@ After any ABI change:
 - Canonical checked-in ABI added at `abis/ProgrammableSecrets.abi.json`
 - Latest GitHub Actions Arbitrum Sepolia deployment live at `0x0eA271390F1e275Bde02BC1087691461497B6650`
 - Latest deployment tx: `0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050`
-- Canonical deployment artifact updated in commit `d99bc1c`
+- Latest GitHub Actions Robinhood Chain Testnet deployment live at `0x0C04e50660332dB8Fda62f92c07eA725D0D66e80`
+- Latest Robinhood deployment tx: `0x9c473e43569da767a13bf16922205222de92c727f5bc541fe19d038d4753ed5e`
+- Canonical deployment artifacts updated in commits `d99bc1c` and `b95afe6`
 - Gas report captured
 
 ## Historical browser rehearsal
@@ -160,6 +162,8 @@ Validated on `2026-03-06` against the earlier Sepolia deployment used for the po
 - Sourcify metadata: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0eA271390F1e275Bde02BC1087691461497B6650/metadata.json`
 - Sourcify source file: `https://sourcify.dev/server/repository/contracts/full_match/421614/0x0eA271390F1e275Bde02BC1087691461497B6650/sources/src/ProgrammableSecrets.sol`
 - Arbiscan-native verification is complete for `https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code`.
+- Robinhood Blockscout verification is complete for `https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract`.
+- Verified via the GitHub deployment workflow using Foundry's `blockscout` verifier against `https://explorer.testnet.chain.robinhood.com/api/`.
 - Verified via Foundry and confirmed through the Etherscan V2 API with:
   - contract name `ProgrammableSecrets`
   - compiler `v0.8.24+commit.e11b9ed9`
