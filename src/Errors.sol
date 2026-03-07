@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 error InvalidPrice();
 error InvalidExpiry();
 error InvalidPaymentToken();
+error InvalidPayoutAddress();
 error PaymentFailed();
 error NotPolicyProvider();
 error PolicyNotFound();

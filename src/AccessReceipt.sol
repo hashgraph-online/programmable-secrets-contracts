@@ -55,8 +55,6 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
         }
 
         receiptTokenId = ++receiptCount;
-        _safeMint(buyer, receiptTokenId);
-
         receipts[receiptTokenId] = Receipt({
             policyId: policyId,
             buyer: buyer,
@@ -72,6 +70,8 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
         emit ReceiptMinted(
             receiptTokenId, policyId, buyer, recipient, paymentToken, price, purchasedAt, ciphertextHash, keyCommitment
         );
+
+        _safeMint(buyer, receiptTokenId);
     }
 
     function hasAccess(uint256 policyId, address buyer) external view returns (bool) {

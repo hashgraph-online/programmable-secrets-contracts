@@ -10,6 +10,7 @@ import {
     BuyerNotAllowlisted,
     InvalidModuleAddress,
     InvalidPaymentToken,
+    InvalidPayoutAddress,
     InvalidPrice,
     PaymentFailed,
     PolicyExpired,
@@ -83,6 +84,9 @@ contract PaymentModule is
         }
 
         address payout = policy.payout;
+        if (payout == address(0)) {
+            revert InvalidPayoutAddress();
+        }
         (bool success,) = payout.call{value: msg.value}("");
         if (!success) {
             revert PaymentFailed();
