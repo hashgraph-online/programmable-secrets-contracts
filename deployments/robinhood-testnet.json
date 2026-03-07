@@ -3,45 +3,45 @@
   "network": "robinhood-testnet",
   "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
   "requestedOwner": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
-  "blockNumber": 9565265,
-  "transactionHash": "0xda53d27add65625805186c99c22e6f084a28193cca01bcf33c9d0ef9289cfbcc",
-  "deployedAt": "2026-03-07T20:12:13Z",
-  "gitCommit": "8c41a13665abe02ff1a8eea852317573ebcf2e8b",
+  "blockNumber": 9568077,
+  "transactionHash": "0x144dd930d5255ce644625254f6f6a68c46214882c8edfde2a84114f0e46bd662",
+  "deployedAt": "2026-03-07T20:24:40Z",
+  "gitCommit": "b5b6dfab06aee5d959396cb740b84783b65b1a49",
   "contracts": {
     "policyVault": {
-      "proxyAddress": "0x9771a385b40E33851679B448F2022f7719721E95",
-      "implementationAddress": "0x0DA6B94b365cd1375a0003396DAeA2349EF73f82",
+      "proxyAddress": "0x0e65116044C731A1e0380c1E39f439f93fb77416",
+      "implementationAddress": "0x3d53D161F6271e454f60B22978D3b625080F2595",
       "proxyKind": "uups-erc1967",
       "abiFile": "abis/PolicyVault.abi.json",
-      "abiChecksum": "0b26bac06cfa741f0ca14074c271d4fc013fdd3828e7ef3257cfb8aa62c1c720"
+      "abiChecksum": "b0c570059488cbc8d5a7a6723da5a33a30a9a2939c9905463d2bf2a82c7652c6"
     },
     "paymentModule": {
-      "proxyAddress": "0x130e8A5fCaEE929559a5E42bA45135E9e176bDF6",
-      "implementationAddress": "0x123C67070AFC8a01E25a6a958f038e4cB2778358",
+      "proxyAddress": "0x82637bff0e39f0B65C17BbC69f768602f093a1Ee",
+      "implementationAddress": "0x7516E7BDE0444D72ed92C6F2a043d86541b4e0d4",
       "proxyKind": "uups-erc1967",
       "abiFile": "abis/PaymentModule.abi.json",
       "abiChecksum": "39a9549a116be35f08bcab05d59b4226cdf1e956e6ae80650f6ed82f1a753832"
     },
     "accessReceipt": {
-      "address": "0x91bd9861CD9b8c3929bFB94f4f80D49b01C4E4F1",
+      "address": "0xE39Ae07F6226156d97C76B4ec6ac8697890Dd350",
       "abiFile": "abis/AccessReceipt.abi.json",
       "abiChecksum": "209af753df68ff4737bdde24627d3c4ad0bd91fd86017942fde926fb63c88b15"
     },
     "builtInPolicyEvaluators": {
       "timeRangeCondition": {
-        "address": "0xA7b01adF2b26AAac7a0e1cEEfFD1688908adad91",
+        "address": "0x27ac32dDeEC8324409e7F0536446615c9869D5C4",
         "abiFile": "abis/TimeRangeCondition.abi.json",
         "abiChecksum": "8ee62a4ca810af694163038f984d4626691c5d63e11b8a2dae071a256a833c18",
         "builtIn": true
       },
       "uaidOwnershipCondition": {
-        "address": "0xBDaeb560693bEd29FFCFFFE4F9551Ba60aE5ED75",
+        "address": "0xfB8987521276cD73229aA4A2D9B4469E12b463Fe",
         "abiFile": "abis/UaidOwnershipCondition.abi.json",
         "abiChecksum": "68b9fe1863546996f9b47384dfcebb26656a68b87138f3a379999e3febb089c6",
         "builtIn": true
       },
       "addressAllowlistCondition": {
-        "address": "0x525320050FcaE55ABB3597Fa0588a72a70719118",
+        "address": "0x00D801d8a84aC17F198E56f535dFD3B69CeeE51F",
         "abiFile": "abis/AddressAllowlistCondition.abi.json",
         "abiChecksum": "d192d916aaa7a86bc64deff1c611dfab7d53a9e798bcec064927c9f0188fe822",
         "builtIn": true
@@ -54,21 +54,21 @@
     }
   },
   "entrypoints": {
-    "policyVaultAddress": "0x9771a385b40E33851679B448F2022f7719721E95",
-    "paymentModuleAddress": "0x130e8A5fCaEE929559a5E42bA45135E9e176bDF6",
-    "accessReceiptAddress": "0x91bd9861CD9b8c3929bFB94f4f80D49b01C4E4F1",
-    "timeRangeConditionAddress": "0xA7b01adF2b26AAac7a0e1cEEfFD1688908adad91",
-    "uaidOwnershipConditionAddress": "0xBDaeb560693bEd29FFCFFFE4F9551Ba60aE5ED75",
-    "addressAllowlistConditionAddress": "0x525320050FcaE55ABB3597Fa0588a72a70719118",
+    "policyVaultAddress": "0x0e65116044C731A1e0380c1E39f439f93fb77416",
+    "paymentModuleAddress": "0x82637bff0e39f0B65C17BbC69f768602f093a1Ee",
+    "accessReceiptAddress": "0xE39Ae07F6226156d97C76B4ec6ac8697890Dd350",
+    "timeRangeConditionAddress": "0x27ac32dDeEC8324409e7F0536446615c9869D5C4",
+    "uaidOwnershipConditionAddress": "0xfB8987521276cD73229aA4A2D9B4469E12b463Fe",
+    "addressAllowlistConditionAddress": "0x00D801d8a84aC17F198E56f535dFD3B69CeeE51F",
     "agentIdentityRegistryAddress": "0x0000000000000000000000000000000000000000"
   },
   "transactions": {
-    "policyVaultDeployment": "0x06901b4c6eb2508f5023c7da5656d3d9f2be337523cdc312dfb8c5d0b1928151",
-    "paymentModuleDeployment": "0x6aa6936d2093d482bcf194a53cc85fde6ab71da2b4c9296cbc235254b9ecce06",
-    "accessReceiptDeployment": "0x44b31329e21aae2e3a4a59b89af5ac40f29a16059426fe9386a6e4d6a306fde7",
-    "timeRangeConditionDeployment": "0xb89d78a629c7628e3c35f1766e3efb8ef6823a4387cfb6b4a77580fe5c6563bd",
-    "uaidOwnershipConditionDeployment": "0x25b0166d8777dc0b4af0489cf15c95319909912edb248133662b5b0e94a434a7",
-    "addressAllowlistConditionDeployment": "0xb5e08363e62a640047485fbfee47a6e591c7becd8cd297de83bbc3764c232906",
-    "receiptConfiguration": "0xef33d8d666d4cc1b91904c5e3ee6b6350512680ccf084c01a2449c7d7b8dcb23"
+    "policyVaultDeployment": "0x25484f397f866eccea97d38c78e89773001c73f0125de350ee1bdce8f9361f5b",
+    "paymentModuleDeployment": "0xf2c8a69e8b97c69c5d3ca0e362274c0ba03be169ef05eafcd88f63139ce4d854",
+    "accessReceiptDeployment": "0x6d91894b2ef911467c280688ff0a36a33b16051671b748a19fc15a9b0d6047dd",
+    "timeRangeConditionDeployment": "0x404793fc563e293558550780e61d74f6f2748a67d7c0e3706cf29c53c2bbf3b8",
+    "uaidOwnershipConditionDeployment": "0x02ca02086d4f1d538611f3c20571b1dfabee1b0cf0e5590519e9c8127958d377",
+    "addressAllowlistConditionDeployment": "0x144dd930d5255ce644625254f6f6a68c46214882c8edfde2a84114f0e46bd662",
+    "receiptConfiguration": "0x9a29e59e80e2d59eb6f8ef59ef5f6d578244c4d23046c57b50c9a28d9b8fabdd"
   }
 }
