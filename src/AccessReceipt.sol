@@ -25,6 +25,7 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
 
     mapping(uint256 => Receipt) private receipts;
     mapping(uint256 => mapping(address => uint256)) private receiptIdsByPolicyAndBuyer;
+    mapping(uint256 => mapping(address => uint256)) private receiptIdsByDatasetAndBuyer;
 
     constructor(address initialOwner) ERC721("Programmable Secrets Access Receipt", "PSAR") Ownable(initialOwner) {}
 
@@ -69,6 +70,7 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
             keyCommitment: keyCommitment
         });
         receiptIdsByPolicyAndBuyer[policyId][buyer] = receiptTokenId;
+        receiptIdsByDatasetAndBuyer[datasetId][buyer] = receiptTokenId;
 
         emit ReceiptMinted(
             receiptTokenId,
@@ -92,6 +94,10 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
 
     function receiptOfPolicyAndBuyer(uint256 policyId, address buyer) external view returns (uint256) {
         return receiptIdsByPolicyAndBuyer[policyId][buyer];
+    }
+
+    function receiptOfDatasetAndBuyer(uint256 datasetId, address buyer) external view returns (uint256) {
+        return receiptIdsByDatasetAndBuyer[datasetId][buyer];
     }
 
     function getReceipt(uint256 receiptTokenId) external view returns (Receipt memory) {

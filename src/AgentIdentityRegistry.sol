@@ -29,7 +29,7 @@ contract AgentIdentityRegistry is ERC721URIStorage, Ownable {
         agents[agentId] = Agent({agentId: agentId, agentDomain: agentDomain, agentAddress: msg.sender});
         metadataValues[agentId][keccak256(bytes("agentDomain"))] = bytes(agentDomain);
         metadataValues[agentId][keccak256(bytes("agentAddress"))] = abi.encode(msg.sender);
-        _safeMint(msg.sender, agentId);
+        _mint(msg.sender, agentId);
         _setTokenURI(agentId, agentUri);
         emit Registered(agentId, agentUri, msg.sender);
     }

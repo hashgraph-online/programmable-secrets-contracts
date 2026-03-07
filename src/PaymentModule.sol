@@ -88,6 +88,9 @@ contract PaymentModule is
         if (policy.allowlistEnabled && !policyVault.isAllowlisted(policyId, msg.sender)) {
             revert BuyerNotAllowlisted();
         }
+        if (accessReceipt.receiptOfDatasetAndBuyer(policy.datasetId, msg.sender) != 0) {
+            revert AlreadyHasReceipt();
+        }
         if (accessReceipt.receiptOfPolicyAndBuyer(policyId, msg.sender) != 0) {
             revert AlreadyHasReceipt();
         }
@@ -155,26 +158,21 @@ contract PaymentModule is
         if (!policyVault.getDataset(datasetId).active) {
             return false;
         }
-
-        uint256 datasetPolicyCount = policyVault.getDatasetPolicyCount(datasetId);
-        for (uint256 index = 0; index < datasetPolicyCount; ++index) {
-            uint256 policyId = policyVault.getDatasetPolicyIdAt(datasetId, index);
-            if (accessReceipt.receiptOfPolicyAndBuyer(policyId, buyer) == 0) {
-                continue;
-            }
-
-            PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
-            if (!policy.active) {
-                continue;
-            }
-            if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
-                continue;
-            }
-
-            return true;
+        uint256 receiptTokenId = accessReceipt.receiptOfDatasetAndBuyer(datasetId, buyer);
+        if (receiptTokenId == 0) {
+            return false;
         }
 
-        return false;
+        AccessReceipt.Receipt memory receipt = accessReceipt.getReceipt(receiptTokenId);
+        PolicyVault.Policy memory policy = policyVault.getPolicy(receipt.policyId);
+        if (!policy.active) {
+            return false;
+        }
+        if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
+            return false;
+        }
+
+        return true;
     }
 
     function receiptOfPolicyAndBuyer(uint256 policyId, address buyer) external view returns (uint256) {

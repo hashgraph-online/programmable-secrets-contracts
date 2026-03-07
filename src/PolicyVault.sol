@@ -427,8 +427,8 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         if (config.agentId == 0) {
             revert InvalidAgentId();
         }
-        try IIdentityRegistry(config.identityRegistry).ownerOf(config.agentId) returns (address owner) {
-            if (owner == address(0)) {
+        try IIdentityRegistry(config.identityRegistry).ownerOf(config.agentId) returns (address agentOwner) {
+            if (agentOwner == address(0)) {
                 revert AgentIdentityNotFound();
             }
         } catch {

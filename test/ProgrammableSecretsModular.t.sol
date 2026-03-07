@@ -177,6 +177,19 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
     }
 
+    function testPurchaseRejectsSecondReceiptForSameDatasetAcrossPolicies() public {
+        uint256 datasetId = _registerDataset();
+        uint256 firstPolicyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false);
+        uint256 secondPolicyId = _createTimeboundPolicyForDataset(datasetId, 2 ether, 0, false);
+
+        vm.prank(BUYER);
+        paymentModule.purchase{value: 1 ether}(firstPolicyId, BUYER, "");
+
+        vm.prank(BUYER);
+        vm.expectRevert(AlreadyHasReceipt.selector);
+        paymentModule.purchase{value: 2 ether}(secondPolicyId, BUYER, "");
+    }
+
     function testReceiptIsNonTransferable() public {
         uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
 
