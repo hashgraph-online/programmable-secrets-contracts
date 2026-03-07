@@ -53,8 +53,8 @@ Current deployed addresses:
 
 | Network | PolicyVault | PaymentModule | AccessReceipt | IdentityRegistry |
 | --- | --- | --- | --- | --- |
-| Robinhood Chain Testnet | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x849575C669e9fA3944880c77E8c77b5c1dE58c8D` | `0x0000000000000000000000000000000000000000` |
-| Arbitrum Sepolia | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x849575C669e9fA3944880c77E8c77b5c1dE58c8D` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
+| Robinhood Chain Testnet | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x5113b58890a712D3fDdb80e800fbe2573FB46C06` | `0xF287C269D17B923eBFFd1Eb76E6c3075286124Ad` |
+| Arbitrum Sepolia | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x5113b58890a712D3fDdb80e800fbe2573FB46C06` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 
 The contract repo should always treat these manifest files as the deployment source of truth.
 
@@ -129,6 +129,7 @@ Events:
 - `PaymentModule` is the only contract allowed to mint receipts.
 - One buyer can hold at most one receipt per policy.
 - Receipts are non-transferable.
+- Every receipt token resolves to the same metadata URI: `ipfs://bafkreibw3osbcrk7w522tcjuz5a4ihffd3bfbjkwmfso5esxyfml2cfal4`.
 - Expiry is strict: `expiresAt == block.timestamp` is expired.
 - UAID-bound purchases require the caller to pass the exact buyer UAID string.
 - `PaymentModule.hasAccess` reports active entitlement, not merely historical purchase. It returns `false` once a time-bound policy expires or a dataset is deactivated.

@@ -3,10 +3,10 @@
   "network": "arbitrum-sepolia",
   "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
   "requestedOwner": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
-  "blockNumber": 247860447,
-  "transactionHash": "0x980806fd47d8c34fb43f06ee9de98c9007a7a850f837b02257ea4b1577fe5ebe",
-  "deployedAt": "2026-03-07T16:15:07Z",
-  "gitCommit": "b7f9f3cd16b7102ad8ec1d64d45c78039449f496",
+  "blockNumber": 247902388,
+  "transactionHash": "0xeb6841c8c32d76decad99d12f0bd2084b40b1a4d96a7a8ea38ad2671319e0115",
+  "deployedAt": "2026-03-07T19:27:06Z",
+  "gitCommit": "bdf2a69d26a119d95d0d93bfb0c7ef7bf3db2601",
   "contracts": {
     "policyVault": {
       "proxyAddress": "0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D",
@@ -23,7 +23,7 @@
       "abiChecksum": "e6c9e52d69037bf734edf31c887768f64e75312221b96388b2c038cfe0714d98"
     },
     "accessReceipt": {
-      "address": "0x849575C669e9fA3944880c77E8c77b5c1dE58c8D",
+      "address": "0x5113b58890a712D3fDdb80e800fbe2573FB46C06",
       "abiFile": "abis/AccessReceipt.abi.json",
       "abiChecksum": "3f31353da85200f6ef0247ff08dad04e1b0ca90bcfdb16043c0cbbd3b274f53c"
     },
@@ -36,13 +36,13 @@
   "entrypoints": {
     "policyVaultAddress": "0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D",
     "paymentModuleAddress": "0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2",
-    "accessReceiptAddress": "0x849575C669e9fA3944880c77E8c77b5c1dE58c8D",
+    "accessReceiptAddress": "0x5113b58890a712D3fDdb80e800fbe2573FB46C06",
     "agentIdentityRegistryAddress": "0x8004A818BFB912233c491871b3d84c89A494BD9e"
   },
   "transactions": {
     "policyVaultDeployment": "0x605782484a6c3c6765f1ea0f3bdca18ea96941d7a12e4b71e7268a0df9e5fe20",
     "paymentModuleDeployment": "0x2775b2e721d3c65de028bab58d99d8eb1a8c90a19805d164af2bbc1cf0e9e3da",
-    "accessReceiptDeployment": "0x6f5cbbd3494f7252df57d518b1046713403e091c46c528a7be05c8a08978fe38",
-    "receiptConfiguration": "0x980806fd47d8c34fb43f06ee9de98c9007a7a850f837b02257ea4b1577fe5ebe"
+    "accessReceiptDeployment": "0x6693e918a2cde0a67250e0b890724773f4b3f9656d8de391c3e0d1770e6f7043",
+    "receiptConfiguration": "0xeb6841c8c32d76decad99d12f0bd2084b40b1a4d96a7a8ea38ad2671319e0115"
   }
 }

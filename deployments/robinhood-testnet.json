@@ -3,10 +3,10 @@
   "network": "robinhood-testnet",
   "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
   "requestedOwner": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
-  "blockNumber": 9473206,
-  "transactionHash": "0xfd8c2e01288722bdbd19e68595f1d834d38d5e37e9d640d229c77089c5148787",
-  "deployedAt": "2026-03-07T16:14:53Z",
-  "gitCommit": "b7f9f3cd16b7102ad8ec1d64d45c78039449f496",
+  "blockNumber": 9553669,
+  "transactionHash": "0x256e53c95e18524c3f78dc613d12bcd953abacee72cf025c725a61690531a92d",
+  "deployedAt": "2026-03-07T19:26:55Z",
+  "gitCommit": "bdf2a69d26a119d95d0d93bfb0c7ef7bf3db2601",
   "contracts": {
     "policyVault": {
       "proxyAddress": "0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D",
@@ -23,7 +23,7 @@
       "abiChecksum": "e6c9e52d69037bf734edf31c887768f64e75312221b96388b2c038cfe0714d98"
     },
     "accessReceipt": {
-      "address": "0x849575C669e9fA3944880c77E8c77b5c1dE58c8D",
+      "address": "0x5113b58890a712D3fDdb80e800fbe2573FB46C06",
       "abiFile": "abis/AccessReceipt.abi.json",
       "abiChecksum": "3f31353da85200f6ef0247ff08dad04e1b0ca90bcfdb16043c0cbbd3b274f53c"
     },
@@ -36,13 +36,13 @@
   "entrypoints": {
     "policyVaultAddress": "0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D",
     "paymentModuleAddress": "0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2",
-    "accessReceiptAddress": "0x849575C669e9fA3944880c77E8c77b5c1dE58c8D",
+    "accessReceiptAddress": "0x5113b58890a712D3fDdb80e800fbe2573FB46C06",
     "agentIdentityRegistryAddress": "0xF287C269D17B923eBFFd1Eb76E6c3075286124Ad"
   },
   "transactions": {
     "policyVaultDeployment": "0x3251308b7549e02b4f9453144d8a1a9c87b23cd8af2be4427f307b5da3b6d58e",
     "paymentModuleDeployment": "0x55be5801f73ba184bd9b9abd845de2502538a619ac4d46833242e265c92662bd",
-    "accessReceiptDeployment": "0x075a280a33605e52e1f3797c534ca301e90faa500655c214cffe569ed91b8cf3",
-    "receiptConfiguration": "0x6ec22811fdd81722752d2995f192986e1f9fad468389207af6718906dd6d7b54"
+    "accessReceiptDeployment": "0xa52ce817a8779732ca4eb627b6f73d6f012490be0c22b70011957289ef14a9f0",
+    "receiptConfiguration": "0x256e53c95e18524c3f78dc613d12bcd953abacee72cf025c725a61690531a92d"
   }
 }
