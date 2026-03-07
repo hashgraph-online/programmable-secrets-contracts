@@ -206,10 +206,24 @@ forge inspect --json UaidOwnershipCondition abi > abis/UaidOwnershipCondition.ab
 
 ## CLI Workflows
 
-The contracts repo includes three live CLI workflows in `script/manage-policies.mjs`:
+The contracts repo now ships a modular CLI under `script/cli/` with a thin entrypoint at `script/manage-policies.mjs`.
+The live workflow commands are:
 - `flow:direct` runs the default Robinhood marketplace path: dataset registration, timebound policy creation, purchase, and local unlock verification
 - `flow:uaid` runs the direct onchain ERC-8004 path on a chain with a live `IdentityRegistry`
 - `flow:broker` registers through the local Registry Broker with `RegistryBrokerClient`, then proves the same UAID-gated purchase flow against the selected live `IdentityRegistry`
+
+The CLI also ships a concrete two-agent walkthrough:
+
+```bash
+programmable-secret examples show --name two-agent-sale
+```
+
+That example uses the checked-in fixture at `examples/two-agent-sale/agent-a-signal.json` and demonstrates:
+- Agent A encrypting and packaging the dataset bundle with `krs encrypt`
+- Agent A registering the dataset directly from the bundle via `datasets register --bundle-file ...`
+- Agent A creating a sell-side policy
+- Agent B purchasing the policy and reading the minted receipt
+- Agent B verifying and decrypting the bundle locally
 
 The package also exposes a first-class binary:
 

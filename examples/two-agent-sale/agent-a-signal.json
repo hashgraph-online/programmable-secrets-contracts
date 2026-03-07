@@ -1,0 +1,7 @@
+{
+  "market": "TSLA",
+  "strategy": "volatility-arbitrage",
+  "signal": "buy-protective-gamma",
+  "confidence": 0.81,
+  "windowHours": 24
+}

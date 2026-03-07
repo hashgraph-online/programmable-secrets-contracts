@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = resolve(TEST_DIR, '..');
+
+function runCli(args) {
+  return spawnSync(
+    process.execPath,
+    ['--import', 'tsx', 'script/manage-policies.mjs', ...args],
+    {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf8',
+    },
+  );
+}
+
+function parseJsonOutput(result) {
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return JSON.parse(result.stdout);
+}
+
+test('help exposes the examples command family', () => {
+  const result = runCli(['help']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\bexamples\b/);
+});
+
+test('examples list exposes the two-agent sale flow', () => {
+  const result = runCli(['examples', 'list', '--json']);
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.kind, 'examples');
+  assert.ok(payload.payload.examples['two-agent-sale']);
+});
+
+test('examples show prints a buyer unlock flow with CLI commands', () => {
+  const result = runCli(['examples', 'show', '--name', 'two-agent-sale', '--json']);
+  const payload = parseJsonOutput(result);
+
+  assert.equal(payload.kind, 'example');
+  assert.equal(payload.payload.name, 'two-agent-sale');
+  assert.equal(payload.payload.example.roles.provider.name, 'Agent A');
+  assert.equal(payload.payload.example.roles.buyer.name, 'Agent B');
+  assert.ok(Array.isArray(payload.payload.example.steps));
+  assert.equal(payload.payload.example.steps.length > 0, true);
+
+  const commands = payload.payload.example.steps.flatMap((step) => step.commands);
+  assert.equal(commands.some((command) => command.includes('krs encrypt')), true);
+  assert.equal(commands.some((command) => command.includes('datasets register')), true);
+  assert.equal(commands.some((command) => command.includes('purchase --policy-id')), true);
+  assert.equal(commands.some((command) => command.includes('krs decrypt')), true);
+});
