@@ -33,6 +33,7 @@ jobs:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       NPM_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || 'latest' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      REPO_VISIBILITY: ${{ github.event.repository.visibility }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,7 +100,13 @@ jobs:
             echo "NPM_TOKEN secret is required to publish the CLI package." >&2
             exit 1
           fi
-          npm publish "${{ steps.metadata.outputs.tarball_name }}" --access public --tag "$NPM_TAG" --provenance
+          publish_args=( "${{ steps.metadata.outputs.tarball_name }}" --access public --tag "$NPM_TAG" )
+          if [ "$REPO_VISIBILITY" = "public" ]; then
+            publish_args+=( --provenance )
+          else
+            echo "Skipping npm provenance because ${{ github.repository }} is $REPO_VISIBILITY." >&2
+          fi
+          npm publish "${publish_args[@]}"
 
       - name: Write summary
         if: ${{ always() }}
@@ -118,5 +125,6 @@ jobs:
               echo "- Result: skipped publish because this version is already available on npm"
             else
               echo "- Result: published to npm"
+              echo "- Provenance: \`$([ \"$REPO_VISIBILITY\" = \"public\" ] && echo enabled || echo skipped for private repository)\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
