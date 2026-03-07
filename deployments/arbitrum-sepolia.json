@@ -3,47 +3,46 @@
   "network": "arbitrum-sepolia",
   "deployer": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
   "requestedOwner": "0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57",
-  "blockNumber": 247820964,
-  "transactionHash": "0xc10a11427d258d09249c832ddaa0ba7bd337cf86155b2c0398eccbf18d736f35",
-  "deployedAt": "2026-03-07T13:13:41Z",
-  "gitCommit": "12ac8d016609b36ce7ff3922956b024c8794e52a",
+  "blockNumber": 247846846,
+  "transactionHash": "0x77f96f857db0fef5382658259e843a0fee1fcdad7c934310a1f8d9875efc4e4a",
+  "deployedAt": "2026-03-07T15:12:38Z",
+  "gitCommit": "b227651ee99740203fad8cb7de1217c1a8b7355d",
   "contracts": {
     "policyVault": {
-      "proxyAddress": "0xc4DFdaBA0388294Ef8a9AA60f99B59Ea360005bA",
-      "implementationAddress": "0x8c8ab1a72543Fd0E15DDC30E1B06986CB42DE7F9",
+      "proxyAddress": "0x6E54d0438fCF366934139D9805cc9F2b3A3660C3",
+      "implementationAddress": "0x526405334eE574FF358B9F45647cF9715FA97828",
       "proxyKind": "uups-erc1967",
       "abiFile": "abis/PolicyVault.abi.json",
       "abiChecksum": "db29d55a09ef31833815cda5507bf9406a6a1ccc9162ce71ea58eef582339a3e"
     },
     "paymentModule": {
-      "proxyAddress": "0x6BE4EBf779Ca901fFEBEdE5a2ddC83E48FA4C5e1",
-      "implementationAddress": "0xE1672B04f6E08f1Af7cEc36e634BF0C19DAD0a35",
+      "proxyAddress": "0xd63960564552A325F5C677c3252B76E33D9accEF",
+      "implementationAddress": "0x627C344422793D73523D13275171840ffF670e9A",
       "proxyKind": "uups-erc1967",
       "abiFile": "abis/PaymentModule.abi.json",
       "abiChecksum": "e6c9e52d69037bf734edf31c887768f64e75312221b96388b2c038cfe0714d98"
     },
     "accessReceipt": {
-      "address": "0x8B6dB3cdb03e37539320b394a6b41b5ec8346c5F",
+      "address": "0x36D29BD2799Ce19b750aA4b576315E4CDd973563",
       "abiFile": "abis/AccessReceipt.abi.json",
       "abiChecksum": "3f31353da85200f6ef0247ff08dad04e1b0ca90bcfdb16043c0cbbd3b274f53c"
     },
-    "agentIdentityRegistry": {
-      "address": "0x5241Bb25B0745ba062190418865ee787B07F6547",
-      "abiFile": "abis/AgentIdentityRegistry.abi.json",
-      "abiChecksum": "e3a5952b43cc3376e028df8360bef1b51683cda616634cf4e004a58609b0928a"
+    "identityRegistry": {
+      "address": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      "abiFile": "abis/IdentityRegistry.abi.json",
+      "abiChecksum": "cdb8e30f41a56ed53421126dab87551ff2a178b8463646f69f75bc5dc9620564"
     }
   },
   "entrypoints": {
-    "policyVaultAddress": "0xc4DFdaBA0388294Ef8a9AA60f99B59Ea360005bA",
-    "paymentModuleAddress": "0x6BE4EBf779Ca901fFEBEdE5a2ddC83E48FA4C5e1",
-    "accessReceiptAddress": "0x8B6dB3cdb03e37539320b394a6b41b5ec8346c5F",
-    "agentIdentityRegistryAddress": "0x5241Bb25B0745ba062190418865ee787B07F6547"
+    "policyVaultAddress": "0x6E54d0438fCF366934139D9805cc9F2b3A3660C3",
+    "paymentModuleAddress": "0xd63960564552A325F5C677c3252B76E33D9accEF",
+    "accessReceiptAddress": "0x36D29BD2799Ce19b750aA4b576315E4CDd973563",
+    "agentIdentityRegistryAddress": "0x8004A818BFB912233c491871b3d84c89A494BD9e"
   },
   "transactions": {
-    "policyVaultDeployment": "0x13a563a6a5416e15cf38e6ee13b1371c85e73cf16f73808fc67e60a589642462",
-    "paymentModuleDeployment": "0xf5cb29108acb36bdc5e221add2d3177fad3ed2a27e939cfd0c2c2d2db21bfa27",
-    "accessReceiptDeployment": "0x8374336cfb7d3bab0ea3222d51e327bb63c7db70c93a93a5bdabcea7846e029c",
-    "agentIdentityRegistryDeployment": "0x477e8c958ff5cbb7993432a42876d58d14954db85fdabb21d45f1e353ad5d858",
+    "policyVaultDeployment": "0x1a39a1f3e8b97e4e27cb6bf2e09618383aa38e860b045d32d2a7eea2d8d474e0",
+    "paymentModuleDeployment": "0xea554bbe744b4e2f7b25931313907c6561912830fe938ac632e245fb3dbc8dc6",
+    "accessReceiptDeployment": "0x4b37cb691335461bf41bc783ca6eb98ad8316badfdb1d70d104df8f3b7c67f7b",
     "receiptConfiguration": ""
   }
 }
