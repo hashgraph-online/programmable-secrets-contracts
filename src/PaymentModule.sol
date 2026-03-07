@@ -8,6 +8,7 @@ import {PaymentModuleEvents} from "./Events.sol";
 import {
     AlreadyHasReceipt,
     BuyerNotAllowlisted,
+    DatasetInactive,
     InvalidModuleAddress,
     InvalidPaymentToken,
     InvalidPayoutAddress,
@@ -62,12 +63,16 @@ contract PaymentModule is
         returns (uint256 receiptTokenId)
     {
         PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
+        PolicyVault.Dataset memory dataset = policyVault.getDataset(policy.datasetId);
 
         if (!policy.active) {
             revert PolicyInactive();
         }
         if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
             revert PolicyExpired();
+        }
+        if (!dataset.active) {
+            revert DatasetInactive();
         }
         if (policy.paymentToken != address(0)) {
             revert InvalidPaymentToken();
@@ -99,28 +104,68 @@ contract PaymentModule is
             msg.sender,
             normalizedRecipient,
             policyId,
+            policy.datasetId,
             policy.paymentToken,
             price,
             purchasedAt,
-            policy.ciphertextHash,
-            policy.keyCommitment
+            dataset.ciphertextHash,
+            dataset.keyCommitment
         );
 
         emit AccessGranted(
             policyId,
+            policy.datasetId,
             receiptTokenId,
             msg.sender,
             normalizedRecipient,
             policy.paymentToken,
             price,
             purchasedAt,
-            policy.ciphertextHash,
-            policy.keyCommitment
+            dataset.ciphertextHash,
+            dataset.keyCommitment
         );
     }
 
     function hasAccess(uint256 policyId, address buyer) external view returns (bool) {
-        return accessReceipt.hasAccess(policyId, buyer);
+        if (accessReceipt.receiptOfPolicyAndBuyer(policyId, buyer) == 0) {
+            return false;
+        }
+
+        PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
+        if (!policy.active) {
+            return false;
+        }
+        if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
+            return false;
+        }
+
+        return policyVault.getDataset(policy.datasetId).active;
+    }
+
+    function hasDatasetAccess(uint256 datasetId, address buyer) external view returns (bool) {
+        if (!policyVault.getDataset(datasetId).active) {
+            return false;
+        }
+
+        uint256 datasetPolicyCount = policyVault.getDatasetPolicyCount(datasetId);
+        for (uint256 index = 0; index < datasetPolicyCount; ++index) {
+            uint256 policyId = policyVault.getDatasetPolicyIdAt(datasetId, index);
+            if (accessReceipt.receiptOfPolicyAndBuyer(policyId, buyer) == 0) {
+                continue;
+            }
+
+            PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
+            if (!policy.active) {
+                continue;
+            }
+            if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     function receiptOfPolicyAndBuyer(uint256 policyId, address buyer) external view returns (uint256) {

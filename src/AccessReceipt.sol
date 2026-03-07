@@ -10,6 +10,7 @@ import {AlreadyHasReceipt, InvalidModuleAddress, NotPaymentModule, ReceiptNonTra
 contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
     struct Receipt {
         uint256 policyId;
+        uint256 datasetId;
         address buyer;
         address recipient;
         address paymentToken;
@@ -44,6 +45,7 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
         address buyer,
         address recipient,
         uint256 policyId,
+        uint256 datasetId,
         address paymentToken,
         uint96 price,
         uint64 purchasedAt,
@@ -57,6 +59,7 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
         receiptTokenId = ++receiptCount;
         receipts[receiptTokenId] = Receipt({
             policyId: policyId,
+            datasetId: datasetId,
             buyer: buyer,
             recipient: recipient,
             paymentToken: paymentToken,
@@ -68,7 +71,16 @@ contract AccessReceipt is ERC721, Ownable2Step, AccessReceiptEvents {
         receiptIdsByPolicyAndBuyer[policyId][buyer] = receiptTokenId;
 
         emit ReceiptMinted(
-            receiptTokenId, policyId, buyer, recipient, paymentToken, price, purchasedAt, ciphertextHash, keyCommitment
+            receiptTokenId,
+            policyId,
+            datasetId,
+            buyer,
+            recipient,
+            paymentToken,
+            price,
+            purchasedAt,
+            ciphertextHash,
+            keyCommitment
         );
 
         _safeMint(buyer, receiptTokenId);

@@ -6,6 +6,19 @@
   },
   {
     "type": "function",
+    "name": "POLICY_TYPE_TIMEBOUND",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "UPGRADE_INTERFACE_VERSION",
     "inputs": [],
     "outputs": [
@@ -26,8 +39,18 @@
   },
   {
     "type": "function",
-    "name": "createPolicy",
+    "name": "createPolicyForDataset",
     "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "policyType",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
       {
         "name": "payout",
         "type": "address",
@@ -54,22 +77,7 @@
         "internalType": "bool"
       },
       {
-        "name": "ciphertextHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "keyCommitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
         "name": "metadataHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "providerUaidHash",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -87,6 +95,191 @@
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createTimeboundPolicy",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "payout",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "paymentToken",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "price",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "expiresAt",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "allowlistEnabled",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "metadataHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "allowlistAccounts",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "policyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "datasetCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDataset",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct PolicyVault.Dataset",
+        "components": [
+          {
+            "name": "provider",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "active",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "ciphertextHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyCommitment",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "metadataHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "providerUaidHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDatasetPolicyCount",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDatasetPolicyIdAt",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDatasetPolicyIds",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -163,6 +356,16 @@
             "name": "providerUaidHash",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "datasetId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "policyType",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -205,6 +408,25 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isSupportedPolicyType",
+    "inputs": [
+      {
+        "name": "policyType",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -260,6 +482,40 @@
   },
   {
     "type": "function",
+    "name": "registerDataset",
+    "inputs": [
+      {
+        "name": "ciphertextHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "keyCommitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "metadataHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "providerUaidHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -281,6 +537,24 @@
       },
       {
         "name": "allowed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setDatasetActive",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "active",
         "type": "bool",
         "internalType": "bool"
       }
@@ -384,6 +658,68 @@
   },
   {
     "type": "event",
+    "name": "DatasetRegistered",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "provider",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "ciphertextHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "keyCommitment",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "metadataHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "providerUaidHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DatasetStatusUpdated",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "active",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -444,6 +780,12 @@
         "internalType": "uint256"
       },
       {
+        "name": "datasetId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
         "name": "provider",
         "type": "address",
         "indexed": true,
@@ -452,7 +794,7 @@
       {
         "name": "payout",
         "type": "address",
-        "indexed": true,
+        "indexed": false,
         "internalType": "address"
       },
       {
@@ -460,6 +802,12 @@
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "policyType",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       },
       {
         "name": "price",
@@ -480,25 +828,13 @@
         "internalType": "bool"
       },
       {
-        "name": "ciphertextHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "keyCommitment",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
         "name": "metadataHash",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
       },
       {
-        "name": "providerUaidHash",
+        "name": "datasetMetadataHash",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -512,6 +848,12 @@
     "inputs": [
       {
         "name": "policyId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "datasetId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -575,6 +917,16 @@
   },
   {
     "type": "error",
+    "name": "DatasetInactive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DatasetNotFound",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ERC1967InvalidImplementation",
     "inputs": [
       {
@@ -592,6 +944,11 @@
   {
     "type": "error",
     "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDatasetHashes",
     "inputs": []
   },
   {
@@ -616,7 +973,17 @@
   },
   {
     "type": "error",
+    "name": "InvalidPolicyType",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidPrice",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotDatasetProvider",
     "inputs": []
   },
   {

@@ -17,7 +17,8 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
 
     bytes32 internal constant CIPHERTEXT_HASH = keccak256("ciphertext");
     bytes32 internal constant KEY_COMMITMENT = keccak256("content-key");
-    bytes32 internal constant METADATA_HASH = keccak256("metadata");
+    bytes32 internal constant METADATA_HASH = keccak256("dataset-metadata");
+    bytes32 internal constant POLICY_METADATA_HASH = keccak256("policy-metadata");
     bytes32 internal constant PROVIDER_UAID_HASH = keccak256("uaid");
 
     PolicyVault internal policyVault;
@@ -51,41 +52,40 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         vm.deal(OTHER_BUYER, 100 ether);
     }
 
-    function _createPolicy(uint96 price, uint64 expiresAt, bool allowlistEnabled) internal returns (uint256 policyId) {
-        address[] memory emptyAllowlist = new address[](0);
-        vm.prank(PROVIDER);
-        policyId = policyVault.createPolicy(
-            PAYOUT,
-            address(0),
-            price,
-            expiresAt,
-            allowlistEnabled,
-            CIPHERTEXT_HASH,
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            emptyAllowlist
-        );
-    }
-
-    function _createAllowlistedPolicy(address allowlistedBuyer, uint96 price, uint64 expiresAt)
+    function _createDatasetPolicy(uint96 price, uint64 expiresAt, bool allowlistEnabled)
         internal
         returns (uint256 policyId)
     {
+        uint256 datasetId = _registerDataset();
+        policyId = _createTimeboundPolicyForDataset(datasetId, price, expiresAt, allowlistEnabled);
+    }
+
+    function _registerDataset() internal returns (uint256 datasetId) {
+        vm.prank(PROVIDER);
+        datasetId = policyVault.registerDataset(CIPHERTEXT_HASH, KEY_COMMITMENT, METADATA_HASH, PROVIDER_UAID_HASH);
+    }
+
+    function _createTimeboundPolicyForDataset(uint256 datasetId, uint96 price, uint64 expiresAt, bool allowlistEnabled)
+        internal
+        returns (uint256 policyId)
+    {
+        address[] memory emptyAllowlist = new address[](0);
+        vm.prank(PROVIDER);
+        policyId = policyVault.createTimeboundPolicy(
+            datasetId, PAYOUT, address(0), price, expiresAt, allowlistEnabled, POLICY_METADATA_HASH, emptyAllowlist
+        );
+    }
+
+    function _createAllowlistedDatasetPolicy(address allowlistedBuyer, uint96 price, uint64 expiresAt)
+        internal
+        returns (uint256 policyId)
+    {
+        uint256 datasetId = _registerDataset();
         address[] memory allowlist = new address[](1);
         allowlist[0] = allowlistedBuyer;
         vm.prank(PROVIDER);
-        policyId = policyVault.createPolicy(
-            PAYOUT,
-            address(0),
-            price,
-            expiresAt,
-            true,
-            CIPHERTEXT_HASH,
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            allowlist
+        policyId = policyVault.createTimeboundPolicy(
+            datasetId, PAYOUT, address(0), price, expiresAt, true, POLICY_METADATA_HASH, allowlist
         );
     }
 }

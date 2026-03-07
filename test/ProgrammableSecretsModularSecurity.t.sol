@@ -5,7 +5,7 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {AccessReceipt} from "../src/AccessReceipt.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
-import {InvalidExpiry, InvalidPolicyHashes, PaymentFailed, PolicyExpired} from "../src/Errors.sol";
+import {DatasetInactive, InvalidDatasetHashes, InvalidExpiry, PaymentFailed, PolicyExpired} from "../src/Errors.sol";
 import {ProgrammableSecretsModularTestBase} from "./ProgrammableSecretsModularTestBase.sol";
 
 contract RejectingPayoutV2 {
@@ -80,21 +80,38 @@ contract ZeroPayoutPolicyVaultV2 {
     }
 
     function getPolicy(uint256) external view returns (PolicyVault.Policy memory policy) {
-        policy.provider = address(0xA11CE);
-        policy.payout = address(0);
-        policy.paymentToken = address(0);
-        policy.price = PRICE;
-        policy.createdAt = uint64(block.timestamp);
-        policy.active = true;
-        policy.allowlistEnabled = false;
-        policy.ciphertextHash = keccak256("ciphertext");
-        policy.keyCommitment = keccak256("content-key");
-        policy.metadataHash = keccak256("metadata");
-        policy.providerUaidHash = keccak256("uaid");
+        policy = PolicyVault.Policy({
+            provider: address(0xA11CE),
+            payout: address(0),
+            paymentToken: address(0),
+            price: PRICE,
+            createdAt: uint64(block.timestamp),
+            expiresAt: 0,
+            active: true,
+            allowlistEnabled: false,
+            ciphertextHash: keccak256("ciphertext"),
+            keyCommitment: keccak256("content-key"),
+            metadataHash: keccak256("policy-metadata"),
+            providerUaidHash: keccak256("uaid"),
+            datasetId: 1,
+            policyType: keccak256("TIMEBOUND_V1")
+        });
     }
 
     function isAllowlisted(uint256, address) external pure returns (bool) {
         return true;
+    }
+
+    function getDataset(uint256) external view returns (PolicyVault.Dataset memory dataset) {
+        dataset = PolicyVault.Dataset({
+            provider: address(0xA11CE),
+            createdAt: uint64(block.timestamp),
+            active: true,
+            ciphertextHash: keccak256("ciphertext"),
+            keyCommitment: keccak256("content-key"),
+            metadataHash: keccak256("dataset-metadata"),
+            providerUaidHash: keccak256("uaid")
+        });
     }
 }
 
@@ -102,61 +119,36 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
     bytes4 private constant INVALID_PAYOUT_ADDRESS_SELECTOR = bytes4(keccak256("InvalidPayoutAddress()"));
 
     function testCreatePolicyRejectsZeroCiphertextHash() public {
-        address[] memory emptyAllowlist = new address[](0);
         vm.prank(PROVIDER);
-        vm.expectRevert(InvalidPolicyHashes.selector);
-        policyVault.createPolicy(
-            PROVIDER,
-            address(0),
-            1 ether,
-            0,
-            false,
-            bytes32(0),
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            emptyAllowlist
-        );
+        vm.expectRevert(InvalidDatasetHashes.selector);
+        policyVault.registerDataset(bytes32(0), KEY_COMMITMENT, METADATA_HASH, PROVIDER_UAID_HASH);
     }
 
     function testCreatePolicyRejectsZeroKeyCommitment() public {
-        address[] memory emptyAllowlist = new address[](0);
         vm.prank(PROVIDER);
-        vm.expectRevert(InvalidPolicyHashes.selector);
-        policyVault.createPolicy(
-            PROVIDER,
-            address(0),
-            1 ether,
-            0,
-            false,
-            CIPHERTEXT_HASH,
-            bytes32(0),
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            emptyAllowlist
-        );
+        vm.expectRevert(InvalidDatasetHashes.selector);
+        policyVault.registerDataset(CIPHERTEXT_HASH, bytes32(0), METADATA_HASH, PROVIDER_UAID_HASH);
     }
 
     function testCreatePolicyRejectsImmediateExpiry() public {
+        uint256 datasetId = _registerDataset();
         address[] memory emptyAllowlist = new address[](0);
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidExpiry.selector);
-        policyVault.createPolicy(
-            PROVIDER,
+        policyVault.createTimeboundPolicy(
+            datasetId,
+            address(0),
             address(0),
             1 ether,
             uint64(block.timestamp),
             false,
-            CIPHERTEXT_HASH,
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
+            POLICY_METADATA_HASH,
             emptyAllowlist
         );
     }
 
     function testUpdatePolicyRejectsImmediateExpiry() public {
-        uint256 policyId = _createPolicy(1 ether, uint64(block.timestamp + 1 days), false);
+        uint256 policyId = _createDatasetPolicy(1 ether, uint64(block.timestamp + 1 days), false);
 
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidExpiry.selector);
@@ -164,7 +156,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
     }
 
     function testPurchaseRevertsAtExactExpiryTimestamp() public {
-        uint256 policyId = _createPolicy(1 ether, uint64(block.timestamp + 1 days), false);
+        uint256 policyId = _createDatasetPolicy(1 ether, uint64(block.timestamp + 1 days), false);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(BUYER);
@@ -174,20 +166,12 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
     function testPurchaseRevertsWhenPayoutRejectsEtherAndDoesNotMintReceipt() public {
         RejectingPayoutV2 payout = new RejectingPayoutV2();
+        uint256 datasetId = _registerDataset();
         address[] memory emptyAllowlist = new address[](0);
 
         vm.prank(PROVIDER);
-        uint256 policyId = policyVault.createPolicy(
-            address(payout),
-            address(0),
-            1 ether,
-            0,
-            false,
-            CIPHERTEXT_HASH,
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            emptyAllowlist
+        uint256 policyId = policyVault.createTimeboundPolicy(
+            datasetId, address(payout), address(0), 1 ether, 0, false, POLICY_METADATA_HASH, emptyAllowlist
         );
 
         vm.prank(BUYER);
@@ -199,33 +183,17 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
     function testPurchaseBlocksPayoutReentrancy() public {
         ReenteringPayoutV2 payout = new ReenteringPayoutV2(paymentModule);
+        uint256 outerDatasetId = _registerDataset();
+        uint256 reenterDatasetId = _registerDataset();
         address[] memory emptyAllowlist = new address[](0);
 
         vm.prank(PROVIDER);
-        uint256 outerPolicyId = policyVault.createPolicy(
-            address(payout),
-            address(0),
-            1 ether,
-            0,
-            false,
-            CIPHERTEXT_HASH,
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            emptyAllowlist
+        uint256 outerPolicyId = policyVault.createTimeboundPolicy(
+            outerDatasetId, address(payout), address(0), 1 ether, 0, false, POLICY_METADATA_HASH, emptyAllowlist
         );
         vm.prank(PROVIDER);
-        uint256 reenterPolicyId = policyVault.createPolicy(
-            address(payout),
-            address(0),
-            1 ether,
-            0,
-            false,
-            CIPHERTEXT_HASH,
-            KEY_COMMITMENT,
-            METADATA_HASH,
-            PROVIDER_UAID_HASH,
-            emptyAllowlist
+        uint256 reenterPolicyId = policyVault.createTimeboundPolicy(
+            reenterDatasetId, address(payout), address(0), 1 ether, 0, false, POLICY_METADATA_HASH, emptyAllowlist
         );
 
         payout.configure(reenterPolicyId, 1 ether);
@@ -240,7 +208,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
     }
 
     function testPurchaseStoresReceiptStateBeforeReceiverCallback() public {
-        uint256 policyId = _createPolicy(1 ether, 0, false);
+        uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
         ReceiptObserverV2 observer = new ReceiptObserverV2(accessReceipt, paymentModule);
         vm.deal(address(observer), 1 ether);
 
@@ -248,6 +216,32 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         assertTrue(observer.observed());
         assertTrue(paymentModule.hasAccess(policyId, address(observer)));
+    }
+
+    function testHasAccessReturnsFalseWhenDatasetIsInactive() public {
+        uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
+        uint256 datasetId = policyVault.getPolicy(policyId).datasetId;
+
+        vm.prank(BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+
+        vm.prank(PROVIDER);
+        policyVault.setDatasetActive(datasetId, false);
+
+        assertTrue(!paymentModule.hasAccess(policyId, BUYER));
+        assertTrue(!paymentModule.hasDatasetAccess(datasetId, BUYER));
+    }
+
+    function testPurchaseRejectsInactiveDataset() public {
+        uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
+        uint256 datasetId = policyVault.getPolicy(policyId).datasetId;
+
+        vm.prank(PROVIDER);
+        policyVault.setDatasetActive(datasetId, false);
+
+        vm.prank(BUYER);
+        vm.expectRevert(DatasetInactive.selector);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
     }
 
     function testPurchaseRejectsZeroPayoutAddress() public {

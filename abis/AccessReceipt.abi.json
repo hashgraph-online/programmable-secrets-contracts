@@ -95,6 +95,11 @@
             "internalType": "uint256"
           },
           {
+            "name": "datasetId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
             "name": "buyer",
             "type": "address",
             "internalType": "address"
@@ -198,6 +203,11 @@
       },
       {
         "name": "policyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "datasetId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -638,9 +648,15 @@
         "internalType": "uint256"
       },
       {
+        "name": "datasetId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
         "name": "buyer",
         "type": "address",
-        "indexed": true,
+        "indexed": false,
         "internalType": "address"
       },
       {

@@ -63,6 +63,30 @@
   },
   {
     "type": "function",
+    "name": "hasDatasetAccess",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "buyer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -259,6 +283,12 @@
         "internalType": "uint256"
       },
       {
+        "name": "datasetId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
         "name": "receiptTokenId",
         "type": "uint256",
         "indexed": true,
@@ -267,7 +297,7 @@
       {
         "name": "buyer",
         "type": "address",
-        "indexed": true,
+        "indexed": false,
         "internalType": "address"
       },
       {
@@ -422,6 +452,11 @@
   },
   {
     "type": "error",
+    "name": "DatasetInactive",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ERC1967InvalidImplementation",
     "inputs": [
       {
@@ -454,6 +489,11 @@
   {
     "type": "error",
     "name": "InvalidPaymentToken",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPayoutAddress",
     "inputs": []
   },
   {
