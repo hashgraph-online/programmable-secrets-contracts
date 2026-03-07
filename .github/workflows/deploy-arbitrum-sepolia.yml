@@ -27,10 +27,12 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: arbitrum-sepolia
     env:
-      IMPLEMENTATION_CONTRACT_PATH: src/ProgrammableSecrets.sol:ProgrammableSecrets
+      ACCESS_RECEIPT_CONTRACT_PATH: src/AccessReceipt.sol:AccessReceipt
+      PAYMENT_MODULE_CONTRACT_PATH: src/PaymentModule.sol:PaymentModule
+      POLICY_VAULT_CONTRACT_PATH: src/PolicyVault.sol:PolicyVault
       PROXY_CONTRACT_PATH: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy"
       COMPILER_VERSION: v0.8.24+commit.e11b9ed9
       OPTIMIZER_RUNS: "200"
@@ -66,11 +68,9 @@ jobs:
               echo "ENABLE_SOURCIFY=true" >> "$GITHUB_ENV"
               echo "NATIVE_VERIFIER=etherscan" >> "$GITHUB_ENV"
               {
-                echo "chain_id=421614"
                 echo "network_name=arbitrum-sepolia"
                 echo "deployment_file=deployments/arbitrum-sepolia.json"
                 echo "broadcast_file=broadcast/Deploy.s.sol/421614/run-latest.json"
-                echo "enable_sourcify=true"
               } >> "$GITHUB_OUTPUT"
               ;;
             robinhood-testnet)
@@ -87,11 +87,9 @@ jobs:
               echo "NATIVE_VERIFIER=blockscout" >> "$GITHUB_ENV"
               echo "BLOCKSCOUT_VERIFIER_URL=https://explorer.testnet.chain.robinhood.com/api/" >> "$GITHUB_ENV"
               {
-                echo "chain_id=46630"
                 echo "network_name=robinhood-testnet"
                 echo "deployment_file=deployments/robinhood-testnet.json"
                 echo "broadcast_file=broadcast/Deploy.s.sol/46630/run-latest.json"
-                echo "enable_sourcify=false"
               } >> "$GITHUB_OUTPUT"
               ;;
             *)
@@ -107,7 +105,7 @@ jobs:
             exit 1
           fi
           if [ -z "$DEPLOYER_PRIVATE_KEY" ] && [ -z "$ETH_PK" ]; then
-            echo "Missing DEPLOYER_PRIVATE_KEY secret" >&2
+            echo "Missing DEPLOYER_PRIVATE_KEY or ETH_PK secret" >&2
             exit 1
           fi
 
@@ -118,68 +116,119 @@ jobs:
             0x*) export ETH_PK="$deployer_key" ;;
             *) export ETH_PK="0x$deployer_key" ;;
           esac
-          contract_owner="$(cast wallet address --private-key "$ETH_PK")"
+          deployer_address="$(cast wallet address --private-key "$ETH_PK")"
+          contract_owner="${CONTRACT_OWNER:-$deployer_address}"
           echo "ETH_PK=$ETH_PK" >> "$GITHUB_ENV"
+          echo "DEPLOYER_ADDRESS=$deployer_address" >> "$GITHUB_ENV"
           echo "CONTRACT_OWNER=$contract_owner" >> "$GITHUB_ENV"
 
-      - name: Deploy contract
+      - name: Deploy contract stack
         run: |
           forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast -vvv
 
       - name: Capture deployment artifact
         id: deployment
         run: |
-          contract_address="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
-          implementation_address="$(jq -r '.transactions[] | select(.contractName == "ProgrammableSecrets") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
-          deployer_address="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .transaction.from' "$BROADCAST_FILE" | tail -n1)"
-          transaction_hash="$(jq -r '.receipts[] | .transactionHash' "$BROADCAST_FILE" | tail -n1)"
+          policy_vault_implementation="$(jq -r '.transactions[] | select(.contractName == "PolicyVault") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
+          payment_module_implementation="$(jq -r '.transactions[] | select(.contractName == "PaymentModule") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
+          access_receipt_address="$(jq -r '.transactions[] | select(.contractName == "AccessReceipt") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
+          policy_vault_proxy="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .contractAddress' "$BROADCAST_FILE" | head -n1)"
+          payment_module_proxy="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
+          policy_vault_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .hash' "$BROADCAST_FILE" | head -n1)"
+          payment_module_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .hash' "$BROADCAST_FILE" | tail -n1)"
+          access_receipt_deploy_tx="$(jq -r '.transactions[] | select(.contractName == "AccessReceipt") | .hash' "$BROADCAST_FILE" | head -n1)"
+          receipt_configuration_tx="$(jq -r '.transactions[] | select(.contractName == null and .function == "setPaymentModule(address)") | .hash' "$BROADCAST_FILE" | tail -n1)"
+          final_transaction_hash="$(jq -r '.receipts[] | .transactionHash' "$BROADCAST_FILE" | tail -n1)"
           block_number_hex="$(jq -r '.receipts[] | .blockNumber' "$BROADCAST_FILE" | tail -n1)"
-          contract_address="$(cast to-check-sum-address "$contract_address")"
-          implementation_address="$(cast to-check-sum-address "$implementation_address")"
-          deployer_address="$(cast to-check-sum-address "$deployer_address")"
+          policy_vault_implementation="$(cast to-check-sum-address "$policy_vault_implementation")"
+          payment_module_implementation="$(cast to-check-sum-address "$payment_module_implementation")"
+          access_receipt_address="$(cast to-check-sum-address "$access_receipt_address")"
+          policy_vault_proxy="$(cast to-check-sum-address "$policy_vault_proxy")"
+          payment_module_proxy="$(cast to-check-sum-address "$payment_module_proxy")"
+          deployer_address="$(cast to-check-sum-address "$DEPLOYER_ADDRESS")"
           contract_owner="$(cast to-check-sum-address "$CONTRACT_OWNER")"
           block_number="$(cast to-dec "$block_number_hex")"
-          abi_checksum="$(shasum -a 256 abis/ProgrammableSecrets.abi.json | awk '{print $1}')"
+          access_receipt_abi_checksum="$(shasum -a 256 abis/AccessReceipt.abi.json | awk '{print $1}')"
+          payment_module_abi_checksum="$(shasum -a 256 abis/PaymentModule.abi.json | awk '{print $1}')"
+          policy_vault_abi_checksum="$(shasum -a 256 abis/PolicyVault.abi.json | awk '{print $1}')"
           deployed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           jq -n \
             --argjson chainId "$CHAIN_ID" \
             --arg network "$NETWORK_NAME" \
-            --arg contractAddress "$contract_address" \
-            --arg proxyAddress "$contract_address" \
-            --arg implementationAddress "$implementation_address" \
-            --arg upgradeOwner "$contract_owner" \
-            --arg proxyKind "uups-erc1967" \
             --arg deployer "$deployer_address" \
+            --arg requestedOwner "$contract_owner" \
             --argjson blockNumber "$block_number" \
-            --arg transactionHash "$transaction_hash" \
+            --arg transactionHash "$final_transaction_hash" \
             --arg deployedAt "$deployed_at" \
-            --arg abiChecksum "$abi_checksum" \
             --arg gitCommit "$GITHUB_SHA" \
+            --arg policyVaultProxy "$policy_vault_proxy" \
+            --arg policyVaultImplementation "$policy_vault_implementation" \
+            --arg paymentModuleProxy "$payment_module_proxy" \
+            --arg paymentModuleImplementation "$payment_module_implementation" \
+            --arg accessReceiptAddress "$access_receipt_address" \
+            --arg policyVaultDeployTx "$policy_vault_deploy_tx" \
+            --arg paymentModuleDeployTx "$payment_module_deploy_tx" \
+            --arg accessReceiptDeployTx "$access_receipt_deploy_tx" \
+            --arg receiptConfigurationTx "$receipt_configuration_tx" \
+            --arg accessReceiptAbiChecksum "$access_receipt_abi_checksum" \
+            --arg paymentModuleAbiChecksum "$payment_module_abi_checksum" \
+            --arg policyVaultAbiChecksum "$policy_vault_abi_checksum" \
             '{
               chainId: $chainId,
               network: $network,
-              contractAddress: $contractAddress,
-              proxyAddress: $proxyAddress,
-              implementationAddress: $implementationAddress,
-              upgradeOwner: $upgradeOwner,
-              proxyKind: $proxyKind,
               deployer: $deployer,
+              requestedOwner: $requestedOwner,
               blockNumber: $blockNumber,
               transactionHash: $transactionHash,
               deployedAt: $deployedAt,
-              abiChecksum: $abiChecksum,
-              gitCommit: $gitCommit
+              gitCommit: $gitCommit,
+              contracts: {
+                policyVault: {
+                  proxyAddress: $policyVaultProxy,
+                  implementationAddress: $policyVaultImplementation,
+                  proxyKind: "uups-erc1967",
+                  abiFile: "abis/PolicyVault.abi.json",
+                  abiChecksum: $policyVaultAbiChecksum
+                },
+                paymentModule: {
+                  proxyAddress: $paymentModuleProxy,
+                  implementationAddress: $paymentModuleImplementation,
+                  proxyKind: "uups-erc1967",
+                  abiFile: "abis/PaymentModule.abi.json",
+                  abiChecksum: $paymentModuleAbiChecksum
+                },
+                accessReceipt: {
+                  address: $accessReceiptAddress,
+                  abiFile: "abis/AccessReceipt.abi.json",
+                  abiChecksum: $accessReceiptAbiChecksum
+                }
+              },
+              entrypoints: {
+                policyVaultAddress: $policyVaultProxy,
+                paymentModuleAddress: $paymentModuleProxy,
+                accessReceiptAddress: $accessReceiptAddress
+              },
+              transactions: {
+                policyVaultDeployment: $policyVaultDeployTx,
+                paymentModuleDeployment: $paymentModuleDeployTx,
+                accessReceiptDeployment: $accessReceiptDeployTx,
+                receiptConfiguration: $receiptConfigurationTx
+              }
             }' > "$DEPLOYMENT_FILE"
           {
-            echo "contract_address=$contract_address"
-            echo "implementation_address=$implementation_address"
-            echo "upgrade_owner=$contract_owner"
-            echo "transaction_hash=$transaction_hash"
+            echo "policy_vault_proxy=$policy_vault_proxy"
+            echo "policy_vault_implementation=$policy_vault_implementation"
+            echo "payment_module_proxy=$payment_module_proxy"
+            echo "payment_module_implementation=$payment_module_implementation"
+            echo "access_receipt_address=$access_receipt_address"
+            echo "deployer_address=$deployer_address"
+            echo "requested_owner=$contract_owner"
+            echo "transaction_hash=$final_transaction_hash"
             echo "block_number=$block_number"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Verify implementation on Sourcify
-        if: ${{ steps.target.outputs.enable_sourcify == 'true' }}
+      - name: Verify PolicyVault implementation on Sourcify
+        if: ${{ env.ENABLE_SOURCIFY == 'true' }}
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
@@ -187,17 +236,29 @@ jobs:
           --verifier sourcify
           --compiler-version "$COMPILER_VERSION"
           --num-of-optimizations "$OPTIMIZER_RUNS"
-          "${{ steps.deployment.outputs.implementation_address }}"
-          "$IMPLEMENTATION_CONTRACT_PATH"
+          "${{ steps.deployment.outputs.policy_vault_implementation }}"
+          "$POLICY_VAULT_CONTRACT_PATH"
 
-      - name: Verify implementation on native explorer
+      - name: Verify PaymentModule implementation on Sourcify
+        if: ${{ env.ENABLE_SOURCIFY == 'true' }}
+        run: >
+          forge verify-contract
+          --chain-id "$CHAIN_ID"
+          --watch
+          --verifier sourcify
+          --compiler-version "$COMPILER_VERSION"
+          --num-of-optimizations "$OPTIMIZER_RUNS"
+          "${{ steps.deployment.outputs.payment_module_implementation }}"
+          "$PAYMENT_MODULE_CONTRACT_PATH"
+
+      - name: Verify PolicyVault implementation on native explorer
         if: ${{ inputs.verify_native_explorer }}
         run: |
           case "$NATIVE_VERIFIER" in
             etherscan)
               api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
               if [ -z "$api_key" ]; then
-                echo "Skipping Arbiscan verification because no API key is configured."
+                echo "Skipping PolicyVault verification because no API key is configured."
                 exit 0
               fi
               forge verify-contract \
@@ -206,8 +267,8 @@ jobs:
                 --compiler-version "$COMPILER_VERSION" \
                 --num-of-optimizations "$OPTIMIZER_RUNS" \
                 --etherscan-api-key "$api_key" \
-                "${{ steps.deployment.outputs.implementation_address }}" \
-                "$IMPLEMENTATION_CONTRACT_PATH"
+                "${{ steps.deployment.outputs.policy_vault_implementation }}" \
+                "$POLICY_VAULT_CONTRACT_PATH"
               ;;
             blockscout)
               forge verify-contract \
@@ -218,8 +279,8 @@ jobs:
                 --num-of-optimizations "$OPTIMIZER_RUNS" \
                 --verifier blockscout \
                 --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
-                "${{ steps.deployment.outputs.implementation_address }}" \
-                "$IMPLEMENTATION_CONTRACT_PATH"
+                "${{ steps.deployment.outputs.policy_vault_implementation }}" \
+                "$POLICY_VAULT_CONTRACT_PATH"
               ;;
             *)
               echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
@@ -227,16 +288,52 @@ jobs:
               ;;
           esac
 
-      - name: Verify proxy on native explorer
+      - name: Verify PaymentModule implementation on native explorer
         if: ${{ inputs.verify_native_explorer }}
         run: |
-          initializer_calldata="$(cast calldata "initialize(address)" "${{ steps.deployment.outputs.upgrade_owner }}")"
-          constructor_args="$(cast abi-encode "constructor(address,bytes)" "${{ steps.deployment.outputs.implementation_address }}" "$initializer_calldata")"
           case "$NATIVE_VERIFIER" in
             etherscan)
               api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
               if [ -z "$api_key" ]; then
-                echo "Skipping Arbiscan proxy verification because no API key is configured."
+                echo "Skipping PaymentModule verification because no API key is configured."
+                exit 0
+              fi
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --etherscan-api-key "$api_key" \
+                "${{ steps.deployment.outputs.payment_module_implementation }}" \
+                "$PAYMENT_MODULE_CONTRACT_PATH"
+              ;;
+            blockscout)
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --rpc-url "$RPC_URL" \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --verifier blockscout \
+                --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
+                "${{ steps.deployment.outputs.payment_module_implementation }}" \
+                "$PAYMENT_MODULE_CONTRACT_PATH"
+              ;;
+            *)
+              echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify AccessReceipt on native explorer
+        if: ${{ inputs.verify_native_explorer }}
+        run: |
+          constructor_args="$(cast abi-encode "constructor(address)" "${{ steps.deployment.outputs.deployer_address }}")"
+          case "$NATIVE_VERIFIER" in
+            etherscan)
+              api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
+              if [ -z "$api_key" ]; then
+                echo "Skipping AccessReceipt verification because no API key is configured."
                 exit 0
               fi
               forge verify-contract \
@@ -246,7 +343,48 @@ jobs:
                 --num-of-optimizations "$OPTIMIZER_RUNS" \
                 --constructor-args "$constructor_args" \
                 --etherscan-api-key "$api_key" \
-                "${{ steps.deployment.outputs.contract_address }}" \
+                "${{ steps.deployment.outputs.access_receipt_address }}" \
+                "$ACCESS_RECEIPT_CONTRACT_PATH"
+              ;;
+            blockscout)
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --rpc-url "$RPC_URL" \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --constructor-args "$constructor_args" \
+                --verifier blockscout \
+                --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
+                "${{ steps.deployment.outputs.access_receipt_address }}" \
+                "$ACCESS_RECEIPT_CONTRACT_PATH"
+              ;;
+            *)
+              echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify PolicyVault proxy on native explorer
+        if: ${{ inputs.verify_native_explorer }}
+        run: |
+          initializer_calldata="$(cast calldata "initialize(address)" "${{ steps.deployment.outputs.deployer_address }}")"
+          constructor_args="$(cast abi-encode "constructor(address,bytes)" "${{ steps.deployment.outputs.policy_vault_implementation }}" "$initializer_calldata")"
+          case "$NATIVE_VERIFIER" in
+            etherscan)
+              api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
+              if [ -z "$api_key" ]; then
+                echo "Skipping PolicyVault proxy verification because no API key is configured."
+                exit 0
+              fi
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --constructor-args "$constructor_args" \
+                --etherscan-api-key "$api_key" \
+                "${{ steps.deployment.outputs.policy_vault_proxy }}" \
                 "$PROXY_CONTRACT_PATH"
               ;;
             blockscout)
@@ -259,7 +397,48 @@ jobs:
                 --constructor-args "$constructor_args" \
                 --verifier blockscout \
                 --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
-                "${{ steps.deployment.outputs.contract_address }}" \
+                "${{ steps.deployment.outputs.policy_vault_proxy }}" \
+                "$PROXY_CONTRACT_PATH"
+              ;;
+            *)
+              echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify PaymentModule proxy on native explorer
+        if: ${{ inputs.verify_native_explorer }}
+        run: |
+          initializer_calldata="$(cast calldata "initialize(address,address,address)" "${{ steps.deployment.outputs.deployer_address }}" "${{ steps.deployment.outputs.policy_vault_proxy }}" "${{ steps.deployment.outputs.access_receipt_address }}")"
+          constructor_args="$(cast abi-encode "constructor(address,bytes)" "${{ steps.deployment.outputs.payment_module_implementation }}" "$initializer_calldata")"
+          case "$NATIVE_VERIFIER" in
+            etherscan)
+              api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
+              if [ -z "$api_key" ]; then
+                echo "Skipping PaymentModule proxy verification because no API key is configured."
+                exit 0
+              fi
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --constructor-args "$constructor_args" \
+                --etherscan-api-key "$api_key" \
+                "${{ steps.deployment.outputs.payment_module_proxy }}" \
+                "$PROXY_CONTRACT_PATH"
+              ;;
+            blockscout)
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --rpc-url "$RPC_URL" \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --constructor-args "$constructor_args" \
+                --verifier blockscout \
+                --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
+                "${{ steps.deployment.outputs.payment_module_proxy }}" \
                 "$PROXY_CONTRACT_PATH"
               ;;
             *)
@@ -293,15 +472,21 @@ jobs:
           {
             echo "## $NETWORK_NAME deployment"
             echo
-            echo "- Proxy: \`${{ steps.deployment.outputs.contract_address }}\`"
-            echo "- Implementation: \`${{ steps.deployment.outputs.implementation_address }}\`"
-            echo "- Upgrade owner: \`${{ steps.deployment.outputs.upgrade_owner }}\`"
-            echo "- Transaction: \`${{ steps.deployment.outputs.transaction_hash }}\`"
+            echo "- PolicyVault proxy: \`${{ steps.deployment.outputs.policy_vault_proxy }}\`"
+            echo "- PolicyVault implementation: \`${{ steps.deployment.outputs.policy_vault_implementation }}\`"
+            echo "- PaymentModule proxy: \`${{ steps.deployment.outputs.payment_module_proxy }}\`"
+            echo "- PaymentModule implementation: \`${{ steps.deployment.outputs.payment_module_implementation }}\`"
+            echo "- AccessReceipt: \`${{ steps.deployment.outputs.access_receipt_address }}\`"
+            echo "- Deployer: \`${{ steps.deployment.outputs.deployer_address }}\`"
+            echo "- Requested owner: \`${{ steps.deployment.outputs.requested_owner }}\`"
+            echo "- Final transaction: \`${{ steps.deployment.outputs.transaction_hash }}\`"
             echo "- Block: \`${{ steps.deployment.outputs.block_number }}\`"
             if [ "$ENABLE_SOURCIFY" = "true" ]; then
-              echo "- Sourcify implementation: $SOURCIFY_REPO_URL/${{ steps.deployment.outputs.implementation_address }}"
+              echo "- Sourcify PolicyVault implementation: $SOURCIFY_REPO_URL/${{ steps.deployment.outputs.policy_vault_implementation }}"
+              echo "- Sourcify PaymentModule implementation: $SOURCIFY_REPO_URL/${{ steps.deployment.outputs.payment_module_implementation }}"
             fi
-            echo "- $EXPLORER_LABEL proxy: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.contract_address }}"
-            echo "- $EXPLORER_LABEL implementation: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.implementation_address }}"
+            echo "- $EXPLORER_LABEL PolicyVault proxy: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.policy_vault_proxy }}"
+            echo "- $EXPLORER_LABEL PaymentModule proxy: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.payment_module_proxy }}"
+            echo "- $EXPLORER_LABEL AccessReceipt: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.access_receipt_address }}"
             echo "- Explorer tx: $EXPLORER_TX_URL/${{ steps.deployment.outputs.transaction_hash }}"
           } >> "$GITHUB_STEP_SUMMARY"

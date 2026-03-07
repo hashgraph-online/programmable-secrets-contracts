@@ -46,7 +46,9 @@ jobs:
 
       - name: Check canonical artifacts
         run: |
-          test -f abis/ProgrammableSecrets.abi.json
+          test -f abis/AccessReceipt.abi.json
+          test -f abis/PaymentModule.abi.json
+          test -f abis/PolicyVault.abi.json
           test -f deployments/arbitrum-sepolia.json
           test -f deployments/robinhood-testnet.json
 

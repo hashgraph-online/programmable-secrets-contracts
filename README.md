@@ -1,465 +1,184 @@
 # Programmable Secrets Contracts
 
-`ProgrammableSecrets` is the EVM settlement contract for the Programmable Secrets POC.
-The current source tree is built for UUPS upgrades behind an ERC1967 proxy.
-It lets a provider publish a priced encrypted payload reference, and lets a buyer purchase one-time access with native ETH.
+Programmable Secrets is a receipt-backed entitlement protocol for finance-agent workflows.
+Providers commit encrypted market data, issuer materials, research, or private tool access onchain.
+Buyers satisfy an onchain policy, mint a non-transferable access receipt, and then request the buyer-bound key envelope from the offchain key release service.
 
-This repository is the source of truth for:
-- the Solidity contract
-- the checked-in ABI
-- the canonical deployment artifacts
-- the GitHub CI, security, and deployment automation
+This package is the contract source of truth for:
+- `PolicyVault`
+- `PaymentModule`
+- `AccessReceipt`
+- deployment automation
+- checked-in ABIs
+- testnet deployment manifests
 
-## Live Contracts
+## Architecture
 
-These are the current published testnet addresses for staging and integration work.
-This repository's deployment source targets `ProgrammableSecrets` behind an `ERC1967Proxy`, and deployment artifacts from this branch record both proxy and implementation addresses.
+| Contract | Responsibility |
+| --- | --- |
+| `PolicyVault` | Stores provider-owned policy state: price, expiry, allowlist mode, ciphertext hash, key commitment, metadata hash, provider identity hash. |
+| `PaymentModule` | Validates purchase conditions, settles native ETH, mints the access receipt, and emits `AccessGranted`. |
+| `AccessReceipt` | Non-transferable ERC-721 entitlement proving a buyer satisfied a specific policy. |
 
-| Network | Chain ID | Current Address | Deploy Tx | Deployed At (UTC) | Verification | Artifact |
-| --- | ---: | --- | --- | --- | --- | --- |
-| Arbitrum Sepolia | `421614` | [`0x0eA271390F1e275Bde02BC1087691461497B6650`](https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code) | [`0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050`](https://sepolia.arbiscan.io/tx/0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050) | `2026-03-06T23:52:15Z` | [Arbiscan](https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code), [Sourcify](https://repo.sourcify.dev/421614/0x0eA271390F1e275Bde02BC1087691461497B6650) | [`deployments/arbitrum-sepolia.json`](./deployments/arbitrum-sepolia.json) |
-| Robinhood Chain Testnet | `46630` | [`0x0C04e50660332dB8Fda62f92c07eA725D0D66e80`](https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract) | [`0x9c473e43569da767a13bf16922205222de92c727f5bc541fe19d038d4753ed5e`](https://explorer.testnet.chain.robinhood.com/tx/0x9c473e43569da767a13bf16922205222de92c727f5bc541fe19d038d4753ed5e) | `2026-03-07T01:49:25Z` | [Robinhood Blockscout exact match](https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract) | [`deployments/robinhood-testnet.json`](./deployments/robinhood-testnet.json) |
+The intended app entrypoints are:
+- policy creation through `PolicyVault`
+- purchase through `PaymentModule`
+- proof checks through `AccessReceipt` or `PaymentModule.receiptOfPolicyAndBuyer`
 
-## Network Details
+## Target Networks
 
-| Network | RPC URL | Currency | Explorer |
-| --- | --- | --- | --- |
-| Arbitrum Sepolia | `https://sepolia-rollup.arbitrum.io/rpc` | `ETH` | `https://sepolia.arbiscan.io` |
-| Robinhood Chain Testnet | `https://rpc.testnet.chain.robinhood.com/rpc` | `ETH` | `https://explorer.testnet.chain.robinhood.com` |
+| Network | Chain ID | RPC | Explorer |
+| --- | ---: | --- | --- |
+| Robinhood Chain Testnet | `46630` | `https://rpc.testnet.chain.robinhood.com/rpc` | `https://explorer.testnet.chain.robinhood.com` |
+| Arbitrum Sepolia | `421614` | `https://sepolia-rollup.arbitrum.io/rpc` | `https://sepolia.arbiscan.io` |
 
-Use Arbitrum Sepolia when you want compatibility with the existing portal and broker walkthrough.
-Use Robinhood Chain Testnet when you want the Robinhood-hosted L2 environment and Blockscout-native verification flow.
-
-## Upgradeable Architecture
-
-The current source is intended to be deployed as:
-
-1. a `ProgrammableSecrets` implementation
-2. an `ERC1967Proxy`
-3. an initializer call `initialize(address initialOwner)` executed during proxy construction
-
-Operational rules:
-
-- point every backend, frontend, or script integration at the proxy address
-- treat the implementation address as deployment metadata, not as the user-facing contract
-- use the proxy owner only for upgrades and ownership transfer, not for offer lifecycle operations
-- rely on the two-step ownership flow for upgrade authority handoff
-- record the proxy and implementation addresses separately in every deployment artifact
+Robinhood testnet is the primary demo target.
+Arbitrum Sepolia remains a secondary compatibility target for existing broker and portal integration work.
 
 ## Contract Surface
 
-The deployed contract in [`src/ProgrammableSecrets.sol`](./src/ProgrammableSecrets.sol) has a deliberately small surface area:
+### PolicyVault
 
+Primary functions:
 - `initialize(address initialOwner)`
-- `createOffer(address payout, address paymentToken, uint96 price, uint64 expiresAt, bytes32 ciphertextHash, bytes32 keyCommitment, bytes32 metadataHash, bytes32 providerUaidHash) returns (uint256 offerId)`
-- `updateOffer(uint256 offerId, uint96 newPrice, uint64 newExpiresAt, bool active, bytes32 newMetadataHash)`
-- `getOffer(uint256 offerId) returns (Offer)`
-- `purchase(uint256 offerId, address recipient) payable`
-- `hasAccess(uint256 offerId, address user) returns (bool)`
-- `purchasedTimestamp(uint256 offerId, address user) returns (uint64)`
-- `offerCount() returns (uint256)`
-- `purchasedAt(uint256 offerId, address buyer) returns (uint64)`
-- `owner() returns (address)`
-- `pendingOwner() returns (address)`
-- `transferOwnership(address newOwner)`
-- `acceptOwnership()`
-- `upgradeToAndCall(address newImplementation, bytes data)`
+- `createPolicy(address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 ciphertextHash, bytes32 keyCommitment, bytes32 metadataHash, bytes32 providerUaidHash, address[] allowlistAccounts)`
+- `updatePolicy(uint256 policyId, uint96 newPrice, uint64 newExpiresAt, bool active, bool allowlistEnabled, bytes32 newMetadataHash)`
+- `setAllowlist(uint256 policyId, address[] accounts, bool allowed)`
+- `getPolicy(uint256 policyId)`
+- `isAllowlisted(uint256 policyId, address account)`
+- `policyCount()`
 
-### Offer Struct
+Events:
+- `PolicyCreated`
+- `PolicyUpdated`
+- `AllowlistUpdated`
 
-`getOffer()` returns:
+### PaymentModule
 
-```solidity
-struct Offer {
-    address provider;
-    address payout;
-    address paymentToken;
-    uint96 price;
-    uint64 createdAt;
-    uint64 expiresAt;
-    bool active;
-    bytes32 ciphertextHash;
-    bytes32 keyCommitment;
-    bytes32 metadataHash;
-    bytes32 providerUaidHash;
-}
-```
+Primary functions:
+- `initialize(address initialOwner, address policyVaultAddress, address accessReceiptAddress)`
+- `purchase(uint256 policyId, address recipient)`
+- `hasAccess(uint256 policyId, address buyer)`
+- `receiptOfPolicyAndBuyer(uint256 policyId, address buyer)`
+- `setPolicyVault(address policyVaultAddress)`
+- `setAccessReceipt(address accessReceiptAddress)`
 
-## Contract Semantics
+Events:
+- `AccessGranted`
+- `PolicyVaultUpdated`
+- `AccessReceiptUpdated`
 
-These behaviors matter for every integration:
+### AccessReceipt
 
-- Upgradeable deployments are proxy-based. The proxy address is the application-facing contract address.
-- `initialize()` is for proxy bootstrap only and reverts on subsequent calls.
-- Native ETH only. `paymentToken` must be `address(0)` today. Any non-zero token address reverts with `InvalidPaymentToken()`.
-- Exact payment only. `purchase()` reverts unless `msg.value == offer.price`.
-- Strict future expiry. `expiresAt` must be `0` or strictly greater than the current block timestamp at create and update time.
-- Expiry is inclusive on failure. A purchase at the exact `expiresAt` timestamp reverts with `OfferExpired()`.
-- Integrity anchors are mandatory. `ciphertextHash`, `keyCommitment`, `metadataHash`, and `providerUaidHash` must all be non-zero.
-- Access is keyed by the buyer wallet. The `recipient` argument is emitted for indexing and downstream routing, but on-chain authorization is still stored under `msg.sender`.
-- One purchase per buyer per offer. A second purchase from the same wallet reverts with `AlreadyPurchased()`.
-- Payout is push-based. ETH is forwarded to `payout` during `purchase()`. If the payout address rejects ETH, the full purchase reverts with `PaymentFailed()`.
-- Reentrancy is guarded. Native payout forwarding is wrapped by a simple non-reentrant gate and reentry attempts revert with `ReentrancyDetected()`.
-- The upgradeable version introduces an owner only for upgrades and ownership transfer. Offer creation, updates, and purchases remain otherwise permissionless.
+Primary functions:
+- `constructor(address initialOwner)`
+- `setPaymentModule(address newPaymentModule)`
+- `mintReceipt(address buyer, address recipient, uint256 policyId, address paymentToken, uint96 price, uint64 purchasedAt, bytes32 ciphertextHash, bytes32 keyCommitment)`
+- `hasAccess(uint256 policyId, address buyer)`
+- `receiptOfPolicyAndBuyer(uint256 policyId, address buyer)`
+- `getReceipt(uint256 receiptTokenId)`
 
-## Recommended Integration Model
+Events:
+- `ReceiptMinted`
+- `PaymentModuleUpdated`
 
-For a full provider and buyer flow:
+## Semantics
 
-1. Encrypt content off-chain.
-2. Compute `ciphertextHash`, `keyCommitment`, `metadataHash`, and `providerUaidHash` off-chain.
-3. Call `createOffer()` from the provider wallet.
-4. Index `OfferCreated`.
-5. Show the offer from `getOffer()` in UI or backend read models.
-6. Call `purchase()` from the buyer wallet with exact ETH.
-7. Index `AccessPurchased`.
-8. Grant off-chain decryption delivery only after confirming the purchase event and `hasAccess()` or `purchasedTimestamp()`.
+- Native ETH only in the current green path. Policies with a non-zero `paymentToken` revert.
+- `PolicyVault` owns policy metadata and provider-controlled mutability.
+- `PaymentModule` is the only contract allowed to mint receipts.
+- One buyer can hold at most one receipt per policy.
+- Receipts are non-transferable.
+- Expiry is strict: `expiresAt == block.timestamp` is expired.
+- Allowlist enforcement is onchain through `PolicyVault.isAllowlisted`.
+- Offchain key release should validate both the signed buyer request and onchain receipt-backed access.
 
-Do not use the `recipient` field as the sole authorization signal. The contract intentionally records access against the buyer address.
+## Upgrade Model
 
-## Quick Start
+- `PolicyVault` is deployed behind `ERC1967Proxy` using UUPS.
+- `PaymentModule` is deployed behind `ERC1967Proxy` using UUPS.
+- `AccessReceipt` is currently a direct deployment, not a proxy.
 
-### Read Contract State with `cast`
+Operational guidance:
+- Treat proxy addresses as canonical app-facing addresses for `PolicyVault` and `PaymentModule`.
+- `AccessReceipt` is app-facing directly at its deployed address.
+- The deploy script initializes proxies with the deployer first, wires `AccessReceipt` to the deployed `PaymentModule`, and optionally starts ownership handoff to `CONTRACT_OWNER`.
 
-Arbitrum Sepolia:
+## Local Verification
+
+Run the full contract suite:
 
 ```bash
-cast call \
-  0x0eA271390F1e275Bde02BC1087691461497B6650 \
-  "offerCount()(uint256)" \
-  --rpc-url https://sepolia-rollup.arbitrum.io/rpc
-```
-
-Robinhood Chain Testnet:
-
-```bash
-cast call \
-  0x0C04e50660332dB8Fda62f92c07eA725D0D66e80 \
-  "offerCount()(uint256)" \
-  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc
-```
-
-### Create an Offer with `cast`
-
-Set your provider wallet key in `DEPLOYER_PRIVATE_KEY` or another local secret variable first.
-
-```bash
-export CONTRACT=0x0C04e50660332dB8Fda62f92c07eA725D0D66e80
-export RPC_URL=https://rpc.testnet.chain.robinhood.com/rpc
-
-cast send "$CONTRACT" \
-  "createOffer(address,address,uint96,uint64,bytes32,bytes32,bytes32,bytes32)" \
-  0x8fC56f5F0534BB25E7F140Eb467E6D1DDBA62e57 \
-  0x0000000000000000000000000000000000000000 \
-  1000000000000000 \
-  1763000000 \
-  0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-  0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
-  0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
-  0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd \
-  --private-key "$DEPLOYER_PRIVATE_KEY" \
-  --rpc-url "$RPC_URL"
-```
-
-Parameter rules:
-
-- `payout`: where ETH should be forwarded during purchase
-- `paymentToken`: must be `0x0000000000000000000000000000000000000000`
-- `price`: uint96 price in wei
-- `expiresAt`: unix seconds or `0` for no expiry
-- `ciphertextHash`: keccak256 or equivalent content-addressed hash of encrypted payload bytes
-- `keyCommitment`: commitment to the decryption key or key envelope
-- `metadataHash`: commitment to the off-chain metadata blob
-- `providerUaidHash`: hashed provider identity anchor
-
-### Purchase an Offer with `cast`
-
-```bash
-export CONTRACT=0x0C04e50660332dB8Fda62f92c07eA725D0D66e80
-export RPC_URL=https://rpc.testnet.chain.robinhood.com/rpc
-export OFFER_ID=1
-export PRICE_WEI=1000000000000000
-
-cast send "$CONTRACT" \
-  "purchase(uint256,address)" \
-  "$OFFER_ID" \
-  0x0000000000000000000000000000000000000000 \
-  --value "$PRICE_WEI" \
-  --private-key "$DEPLOYER_PRIVATE_KEY" \
-  --rpc-url "$RPC_URL"
-```
-
-Passing the zero address as `recipient` is valid. The contract normalizes that emitted recipient to the buyer address.
-
-### Read Access State After Purchase
-
-```bash
-cast call "$CONTRACT" \
-  "hasAccess(uint256,address)(bool)" \
-  "$OFFER_ID" \
-  0xYourBuyerAddress \
-  --rpc-url "$RPC_URL"
-
-cast call "$CONTRACT" \
-  "purchasedTimestamp(uint256,address)(uint64)" \
-  "$OFFER_ID" \
-  0xYourBuyerAddress \
-  --rpc-url "$RPC_URL"
-```
-
-## Events
-
-Declared in [`src/Events.sol`](./src/Events.sol).
-
-### `OfferCreated`
-
-Emitted when a provider publishes a new offer.
-
-Indexed topics:
-
-- `offerId`
-- `provider`
-- `payout`
-
-Data payload:
-
-- `paymentToken`
-- `price`
-- `expiresAt`
-- `ciphertextHash`
-- `keyCommitment`
-- `metadataHash`
-- `providerUaidHash`
-
-### `OfferUpdated`
-
-Emitted when mutable offer fields are changed.
-
-Indexed topics:
-
-- `offerId`
-
-Data payload:
-
-- `newPrice`
-- `newExpiresAt`
-- `active`
-- `newMetadataHash`
-
-### `AccessPurchased`
-
-Emitted when a buyer completes a purchase.
-
-Indexed topics:
-
-- `offerId`
-- `buyer`
-- `recipient`
-
-Data payload:
-
-- `paymentToken`
-- `price`
-- `purchasedAt`
-- `ciphertextHash`
-- `keyCommitment`
-
-## Errors
-
-Declared in [`src/Errors.sol`](./src/Errors.sol).
-
-| Error | Meaning |
-| --- | --- |
-| `NotOfferProvider()` | Caller tried to update an offer they do not own |
-| `OfferNotFound()` | `offerId` does not exist |
-| `OfferInactive()` | Offer was disabled before purchase |
-| `OfferExpired()` | Offer expiry has passed or matches the current timestamp |
-| `AlreadyPurchased()` | Buyer already purchased this offer |
-| `InvalidPrice()` | Zero price at create or update, or incorrect `msg.value` at purchase |
-| `InvalidExpiry()` | `expiresAt` is not `0` and not strictly in the future |
-| `InvalidPaymentToken()` | Non-native token flow attempted |
-| `InvalidOfferHashes()` | One or more required hashes were zero |
-| `PaymentFailed()` | Payout address rejected native ETH transfer |
-| `ReentrancyDetected()` | Reentrant purchase attempt was blocked |
-
-## Security and Scalability Notes
-
-- The contract uses packed internal storage for offers while preserving a stable external `Offer` ABI.
-- Upgradeable application state is isolated inside an explicit storage namespace rather than depending on inherited storage order.
-- The implementation constructor disables initializers to reduce takeover risk on the implementation address.
-- `offerCount` grows monotonically and is safe for simple append-only indexing.
-- Purchase state is a nested mapping, which keeps lookup cost constant per `(offerId, buyer)` pair.
-- There is no array enumeration on-chain. Production indexing should be event-driven.
-- The current settlement path is optimized for native ETH only. If ERC-20 support is added later, treat that as a new audited version rather than a silent extension.
-- Upgrade authority is restricted to the owner and transferred through a two-step handshake.
-
-Latest measured gas from `forge test --gas-report`:
-
-- Implementation deployment cost: `1482362`
-- Implementation deployment size: `6670`
-- Proxy deployment cost: `180585`
-- Proxy deployment size: `1128`
-- `createOffer` average gas: `171577`
-- `purchase` average gas: `54491`
-- `updateOffer` average gas: `11346`
-- `upgradeToAndCall` average gas: `7203`
-
-## ABI and Integration Handoff
-
-The canonical ABI is checked in at [`abis/ProgrammableSecrets.abi.json`](./abis/ProgrammableSecrets.abi.json).
-
-After any ABI or deployment change:
-
-1. rebuild this project
-2. refresh the ABI file if required
-3. refresh the network deployment artifact
-4. sync the address and ABI into `registry-broker`
-5. sync the address and ABI into `hol-points-portal`
-
-## Repository Layout
-
-- [`src/ProgrammableSecrets.sol`](./src/ProgrammableSecrets.sol): core contract
-- [`src/Errors.sol`](./src/Errors.sol): custom errors
-- [`src/Events.sol`](./src/Events.sol): emitted events
-- [`script/Deploy.s.sol`](./script/Deploy.s.sol): Foundry deployment script
-- [`script/Verify.s.sol`](./script/Verify.s.sol): helper placeholder
-- [`test/ProgrammableSecrets.t.sol`](./test/ProgrammableSecrets.t.sol): unit and fuzz tests
-- [`test/ProgrammableSecretsSecurity.t.sol`](./test/ProgrammableSecretsSecurity.t.sol): security regressions
-- [`deployments/arbitrum-sepolia.json`](./deployments/arbitrum-sepolia.json): canonical Arbitrum deployment
-- [`deployments/robinhood-testnet.json`](./deployments/robinhood-testnet.json): canonical Robinhood deployment
-
-## Local Development
-
-Requirements:
-
-- Foundry with `forge`
-
-Core commands:
-
-```bash
-cd programmable-secrets-contracts
-forge build
 forge fmt --check
 forge lint
+forge build --sizes
 forge test -vvv
-forge test --gas-report
 ```
 
-## Deployment Automation
+Regenerate checked-in ABIs:
 
-GitHub Actions ships three relevant workflows:
+```bash
+forge inspect --json AccessReceipt abi > abis/AccessReceipt.abi.json
+forge inspect --json PaymentModule abi > abis/PaymentModule.abi.json
+forge inspect --json PolicyVault abi > abis/PolicyVault.abi.json
+```
 
-- `.github/workflows/ci.yml`
-  Runs formatting, linting, build sizing, tests, gas report generation, and checks that both deployment artifacts exist.
-- `.github/workflows/security.yml`
-  Runs Slither and uploads SARIF output.
-- `.github/workflows/deploy-arbitrum-sepolia.yml`
-  Manual `workflow_dispatch` deployer for both supported networks. The workflow deploys a `ProgrammableSecrets` implementation plus `ERC1967Proxy`, records both addresses, derives the upgrade owner from the deployer key, and verifies the implementation and proxy separately on the selected explorer.
+## Deployment
 
-### GitHub Deployment Inputs
+Required environment variables for `script/Deploy.s.sol`:
+- `ETH_PK`
+- `DEPLOYER_ADDRESS`
+- `CONTRACT_OWNER`
 
-Workflow name:
+Example deploy command:
 
+```bash
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
+  --broadcast -vvv
+```
+
+The GitHub workflow `.github/workflows/deploy-arbitrum-sepolia.yml` performs the same deployment flow for both supported testnets and writes a structured manifest to:
+- `deployments/robinhood-testnet.json`
+- `deployments/arbitrum-sepolia.json`
+
+Each manifest is expected to record:
+- `contracts.policyVault.proxyAddress`
+- `contracts.policyVault.implementationAddress`
+- `contracts.paymentModule.proxyAddress`
+- `contracts.paymentModule.implementationAddress`
+- `contracts.accessReceipt.address`
+- `entrypoints.policyVaultAddress`
+- `entrypoints.paymentModuleAddress`
+- `entrypoints.accessReceiptAddress`
+
+## ABI Files
+
+Checked-in app-facing ABIs:
+- `abis/PolicyVault.abi.json`
+- `abis/PaymentModule.abi.json`
+- `abis/AccessReceipt.abi.json`
+
+These are the files the broker and portal should consume for code generation, client reads, and transaction encoding.
+
+## GitHub Automation
+
+Workflows:
+- `Foundry CI`
+- `Solidity Security`
 - `Deploy EVM Testnet`
 
-Workflow input:
-
-- `network`: `arbitrum-sepolia` or `robinhood-testnet`
-
-Current environment:
-
-- `arbitrum-sepolia`
-
-Required secrets in that environment:
-
+Required deployment environment secrets:
 - `ARBITRUM_SEPOLIA_RPC_URL`
 - `ROBINHOOD_TESTNET_RPC_URL`
-- `DEPLOYER_PRIVATE_KEY`
+- `DEPLOYER_PRIVATE_KEY` or `ETH_PK`
+- `ETHERSCAN_API_KEY` or `ARBISCAN_API_KEY` for Arbitrum native verification
 
-Optional verification secrets:
+## Integration Notes
 
-- `ARBISCAN_API_KEY`
-- `ETHERSCAN_API_KEY`
-- `ETH_PK`
+Broker and portal integrations should treat:
+- `PolicyVault` as the provider commit surface
+- `PaymentModule` as the settlement surface
+- `AccessReceipt` as the portable proof surface
 
-The workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK`. Keys may be stored with or without `0x`.
-The workflow derives `CONTRACT_OWNER` from the deployer key and passes it into the proxy initializer.
-Deployment artifacts record at least:
-
-- `contractAddress` as the proxy address
-- `proxyAddress`
-- `implementationAddress`
-- `upgradeOwner`
-- `proxyKind`
-
-## Manual Deployment Commands
-
-Arbitrum Sepolia:
-
-```bash
-export CONTRACT_OWNER=0xYourUpgradeOwner
-export ETH_PK=0xYourPrivateKey
-
-forge script script/Deploy.s.sol:Deploy \
-  --rpc-url https://sepolia-rollup.arbitrum.io/rpc \
-  --broadcast \
-  -vvv
-```
-
-Robinhood Chain Testnet:
-
-```bash
-export CONTRACT_OWNER=0xYourUpgradeOwner
-export ETH_PK=0xYourPrivateKey
-
-forge script script/Deploy.s.sol:Deploy \
-  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
-  --broadcast \
-  -vvv
-```
-
-Manual verification for a Robinhood proxy deployment uses Blockscout for the implementation and the proxy separately:
-
-```bash
-forge verify-contract \
-  0xImplementationAddress \
-  src/ProgrammableSecrets.sol:ProgrammableSecrets \
-  --chain-id 46630 \
-  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
-  --verifier blockscout \
-  --verifier-url https://explorer.testnet.chain.robinhood.com/api/ \
-  --compiler-version v0.8.24+commit.e11b9ed9 \
-  --num-of-optimizations 200 \
-  --watch
-```
-
-```bash
-export INITIALIZER_DATA=$(cast calldata "initialize(address)" "$CONTRACT_OWNER")
-export CONSTRUCTOR_ARGS=$(cast abi-encode "constructor(address,bytes)" 0xImplementationAddress "$INITIALIZER_DATA")
-
-forge verify-contract \
-  0xProxyAddress \
-  @openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
-  --chain-id 46630 \
-  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
-  --verifier blockscout \
-  --verifier-url https://explorer.testnet.chain.robinhood.com/api/ \
-  --compiler-version v0.8.24+commit.e11b9ed9 \
-  --num-of-optimizations 200 \
-  --constructor-args "$CONSTRUCTOR_ARGS" \
-  --watch
-```
-
-## Verification Status
-
-Arbitrum Sepolia:
-
-- Sourcify exact match: [repo.sourcify.dev/421614/0x0eA271390F1e275Bde02BC1087691461497B6650](https://repo.sourcify.dev/421614/0x0eA271390F1e275Bde02BC1087691461497B6650)
-- Arbiscan source: [sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code](https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code)
-
-Robinhood Chain Testnet:
-
-- Blockscout exact match: [explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract](https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract)
-
-These explorer links point at the current published testnet contracts.
-Upgradeable deployments from this source verify the implementation and proxy separately.
+Do not integrate against the historical single-contract paywall model from earlier POC iterations.

@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {PaymentModuleEvents} from "./Events.sol";
+import {
+    AlreadyHasReceipt,
+    BuyerNotAllowlisted,
+    InvalidModuleAddress,
+    InvalidPaymentToken,
+    InvalidPrice,
+    PaymentFailed,
+    PolicyExpired,
+    PolicyInactive
+} from "./Errors.sol";
+import {PolicyVault} from "./PolicyVault.sol";
+import {AccessReceipt} from "./AccessReceipt.sol";
+import {UpgradeableReentrancyGuard} from "./UpgradeableReentrancyGuard.sol";
+
+contract PaymentModule is
+    Initializable,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeable,
+    UpgradeableReentrancyGuard,
+    PaymentModuleEvents
+{
+    PolicyVault public policyVault;
+    AccessReceipt public accessReceipt;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address initialOwner, address policyVaultAddress, address accessReceiptAddress)
+        external
+        initializer
+    {
+        __Ownable_init(initialOwner);
+        __Ownable2Step_init();
+        _upgradeableReentrancyGuardInit();
+
+        _setPolicyVault(policyVaultAddress);
+        _setAccessReceipt(accessReceiptAddress);
+    }
+
+    function setPolicyVault(address policyVaultAddress) external onlyOwner {
+        _setPolicyVault(policyVaultAddress);
+    }
+
+    function setAccessReceipt(address accessReceiptAddress) external onlyOwner {
+        _setAccessReceipt(accessReceiptAddress);
+    }
+
+    function purchase(uint256 policyId, address recipient)
+        external
+        payable
+        nonReentrant
+        returns (uint256 receiptTokenId)
+    {
+        PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
+
+        if (!policy.active) {
+            revert PolicyInactive();
+        }
+        if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
+            revert PolicyExpired();
+        }
+        if (policy.paymentToken != address(0)) {
+            revert InvalidPaymentToken();
+        }
+        if (policy.allowlistEnabled && !policyVault.isAllowlisted(policyId, msg.sender)) {
+            revert BuyerNotAllowlisted();
+        }
+        if (accessReceipt.receiptOfPolicyAndBuyer(policyId, msg.sender) != 0) {
+            revert AlreadyHasReceipt();
+        }
+        uint96 price = policy.price;
+        if (msg.value != price) {
+            revert InvalidPrice();
+        }
+
+        address payout = policy.payout;
+        (bool success,) = payout.call{value: msg.value}("");
+        if (!success) {
+            revert PaymentFailed();
+        }
+
+        address normalizedRecipient = recipient == address(0) ? msg.sender : recipient;
+        uint64 purchasedAt = uint64(block.timestamp);
+
+        receiptTokenId = accessReceipt.mintReceipt(
+            msg.sender,
+            normalizedRecipient,
+            policyId,
+            policy.paymentToken,
+            price,
+            purchasedAt,
+            policy.ciphertextHash,
+            policy.keyCommitment
+        );
+
+        emit AccessGranted(
+            policyId,
+            receiptTokenId,
+            msg.sender,
+            normalizedRecipient,
+            policy.paymentToken,
+            price,
+            purchasedAt,
+            policy.ciphertextHash,
+            policy.keyCommitment
+        );
+    }
+
+    function hasAccess(uint256 policyId, address buyer) external view returns (bool) {
+        return accessReceipt.hasAccess(policyId, buyer);
+    }
+
+    function receiptOfPolicyAndBuyer(uint256 policyId, address buyer) external view returns (uint256) {
+        return accessReceipt.receiptOfPolicyAndBuyer(policyId, buyer);
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        newImplementation;
+    }
+
+    function _setPolicyVault(address policyVaultAddress) internal {
+        if (policyVaultAddress == address(0)) {
+            revert InvalidModuleAddress();
+        }
+        policyVault = PolicyVault(policyVaultAddress);
+        emit PolicyVaultUpdated(policyVaultAddress);
+    }
+
+    function _setAccessReceipt(address accessReceiptAddress) internal {
+        if (accessReceiptAddress == address(0)) {
+            revert InvalidModuleAddress();
+        }
+        accessReceipt = AccessReceipt(accessReceiptAddress);
+        emit AccessReceiptUpdated(accessReceiptAddress);
+    }
+}
