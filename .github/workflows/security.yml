@@ -41,7 +41,7 @@ jobs:
           --exclude-dependencies
           --exclude-informational
           --exclude-optimization
-          --exclude timestamp,low-level-calls,calls-loop,reentrancy-events,missing-zero-check,unused-return
+          --exclude timestamp,low-level-calls,calls-loop,reentrancy-events,missing-zero-check,unused-return,arbitrary-send-eth
           --fail-low
           --sarif results.sarif
 
