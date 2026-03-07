@@ -47,6 +47,7 @@
     "doctor": "node --import tsx script/manage-policies.mjs doctor",
     "env:bootstrap": "node --import tsx script/manage-policies.mjs env-bootstrap",
     "flow:direct": "node --import tsx script/manage-policies.mjs flow:direct",
+    "flow:uaid": "node --import tsx script/manage-policies.mjs flow:uaid",
     "flow:broker": "node --import tsx script/manage-policies.mjs flow:broker",
     "policies:list": "node --import tsx script/manage-policies.mjs list",
     "policies:deactivate-all": "node --import tsx script/manage-policies.mjs deactivate-all",

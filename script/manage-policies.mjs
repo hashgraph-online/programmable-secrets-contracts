@@ -12,11 +12,13 @@ import {
   createWalletClient,
   decodeAbiParameters,
   decodeEventLog,
+  encodeAbiParameters,
   formatEther,
   getAddress,
   http,
   keccak256,
   parseAbi,
+  parseAbiParameters,
   toBytes,
   zeroAddress,
 } from 'viem';
@@ -120,13 +122,15 @@ const COMMAND_TREE = {
   'env-bootstrap': [],
   'flow:broker': [],
   'flow:direct': [],
+  'flow:uaid': [],
+  evaluators: ['get', 'list'],
   help: [],
   identity: ['register'],
   init: [],
   krs: ['decrypt', 'encrypt', 'verify'],
   preview: [],
   profiles: ['init', 'list', 'show'],
-  policies: ['allowlist', 'create-uaid', 'create-timebound', 'export', 'get', 'import', 'list', 'update'],
+  policies: ['allowlist', 'create-uaid', 'create-timebound', 'evaluators', 'export', 'get', 'import', 'list', 'update'],
   purchase: [],
   receipts: ['get'],
   start: [],
@@ -442,6 +446,13 @@ function emitPreview(preview) {
     printField('Value', `${formatEther(BigInt(preview.valueWei))} ETH (${preview.valueWei} wei)`);
   }
   printInfo(`Args: ${serializeJson(preview.args)}`);
+  if (Array.isArray(preview.conditions) && preview.conditions.length > 0) {
+    printField('Conditions', preview.conditions.length);
+    for (const condition of preview.conditions) {
+      console.log(`  - [${condition.index}] ${condition.builtInKind || 'custom'} :: ${condition.description}`);
+      console.log(`    runtime witness: ${condition.runtimeWitnessLabel}`);
+    }
+  }
   if (preview.nextCommand) {
     printField('Next', preview.nextCommand);
   }
@@ -909,15 +920,27 @@ function showCommandTopic(topic) {
       return;
     case 'flow:direct':
       printHeading('flow:direct');
-      console.log('Runs the direct ERC-8004 identity purchase flow on the selected network.');
+      console.log('Runs the default Robinhood marketplace flow: dataset registration, timebound policy creation, purchase, and local unlock verification.');
       console.log(`Run: ${CLI_COMMAND} flow:direct`);
       console.log(`Arbitrum override: PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:direct`);
       return;
+    case 'flow:uaid':
+      printHeading('flow:uaid');
+      console.log('Runs the direct ERC-8004 identity purchase flow on a chain with a live IdentityRegistry.');
+      console.log(`Run: PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:uaid`);
+      return;
     case 'flow:broker':
       printHeading('flow:broker');
-      console.log('Registers through Registry Broker first, then completes the ERC-8004 identity purchase flow.');
+      console.log('Registers through Registry Broker first, then completes the ERC-8004 identity purchase flow on a broker-supported chain.');
       console.log(`Run: ${CLI_COMMAND} flow:broker`);
       console.log(`Arbitrum override: PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:broker`);
+      return;
+    case 'evaluators':
+      printHeading('evaluators');
+      printCommandUsage([
+        `List evaluators: ${CLI_COMMAND} evaluators list`,
+        `Get evaluator: ${CLI_COMMAND} evaluators get --evaluator 0x...`,
+      ]);
       return;
     case 'profiles':
       printHeading('profiles');
@@ -968,6 +991,7 @@ function showCommandTopic(topic) {
       printCommandUsage([
         `List policies: ${CLI_COMMAND} policies list [--dataset-id 1]`,
         `Read policy: ${CLI_COMMAND} policies get --policy-id 1`,
+        `List registered evaluators: ${CLI_COMMAND} policies evaluators`,
         `Export policy: ${CLI_COMMAND} policies export --policy-id 1 --output policy-1.json`,
         `Import policy: ${CLI_COMMAND} policies import --file policy-1.json`,
         'Create timebound policy:',
@@ -976,8 +1000,8 @@ function showCommandTopic(topic) {
         `  ${CLI_COMMAND} policies create-uaid --dataset-id 1 --price-eth 0.00001 --required-buyer-uaid uaid:aid:... --agent-id 97`,
         'Update policy:',
         `  ${CLI_COMMAND} policies update --policy-id 1 --price-eth 0.00002 --active true --metadata-json '{"title":"Updated policy"}'`,
-        'Set allowlist:',
-        `  ${CLI_COMMAND} policies allowlist --policy-id 1 --accounts 0xabc,0xdef --allowed true`,
+        'Allowlist note:',
+        `  ${CLI_COMMAND} policies allowlist always fails because allowlist configs are immutable after policy creation.`,
       ]);
       return;
     case 'purchase':
@@ -1041,20 +1065,23 @@ function showHelp(topic = null) {
   console.log(`  1. ${CLI_COMMAND} init`);
   console.log(`  2. ${CLI_COMMAND} doctor`);
   console.log(`  3. ${CLI_COMMAND} flow:direct`);
-  console.log(`  4. ${CLI_COMMAND} flow:broker`);
+  console.log(`  4. PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:uaid`);
+  console.log(`  5. PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:broker`);
   console.log('');
   console.log('Guided commands:');
   console.log(`  ${CLI_COMMAND} init          Bootstrap profiles and optional completions`);
   console.log(`  ${CLI_COMMAND} start         Guided quick start with next-step recommendations`);
   console.log(`  ${CLI_COMMAND} doctor        Check env, RPC, broker, and deployment readiness`);
   console.log(`  ${CLI_COMMAND} env-bootstrap Write a local .env.local from live Docker defaults`);
-  console.log(`  ${CLI_COMMAND} flow:direct   Direct ERC-8004 identity flow (Robinhood by default)`);
-  console.log(`  ${CLI_COMMAND} flow:broker   Registry Broker-backed identity flow (Robinhood by default)`);
+  console.log(`  ${CLI_COMMAND} flow:direct   Robinhood marketplace flow with timebound access and local unlock proof`);
+  console.log(`  ${CLI_COMMAND} flow:uaid     Direct ERC-8004 identity flow on a chain with IdentityRegistry support`);
+  console.log(`  ${CLI_COMMAND} flow:broker   Registry Broker-backed ERC-8004 identity flow`);
   console.log('');
   console.log('Contract commands:');
   console.log(`  ${CLI_COMMAND} contracts    Show deployed contract addresses`);
+  console.log(`  ${CLI_COMMAND} evaluators   Inspect registered evaluator modules and trust metadata`);
   console.log(`  ${CLI_COMMAND} datasets ... Register, inspect, and activate datasets`);
-  console.log(`  ${CLI_COMMAND} policies ... Create, inspect, update, and allowlist policies`);
+  console.log(`  ${CLI_COMMAND} policies ... Create, inspect, update, and export/import evaluator-backed policies`);
   console.log(`  ${CLI_COMMAND} purchase ... Purchase a policy using the live onchain price`);
   console.log(`  ${CLI_COMMAND} access ...   Check access and resolve receipts by buyer`);
   console.log(`  ${CLI_COMMAND} receipts ... Read receipt details`);
@@ -1071,7 +1098,7 @@ function showHelp(topic = null) {
   console.log('  pnpm run policies:update-prices');
   console.log('');
   console.log('Global flags: --json --quiet --interactive --profile <name> --preview --yes --agent-safe');
-  console.log('Set PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia to target Arbitrum for the identity flow.');
+  console.log('Set PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia to target Arbitrum for the identity workflows.');
   console.log(`If wallet keys are missing, run ${CLI_COMMAND} env-bootstrap or ${CLI_COMMAND} doctor.`);
   console.log(`Topic help: ${CLI_COMMAND} help datasets`);
 }
@@ -1382,7 +1409,12 @@ async function runStart() {
   if (CLI_RUNTIME.json) {
     emitResult('start', {
       ...payload,
-      next: [`${CLI_COMMAND} doctor`, `${CLI_COMMAND} flow:direct`, `${CLI_COMMAND} flow:broker`],
+      next: [
+        `${CLI_COMMAND} doctor`,
+        `${CLI_COMMAND} flow:direct`,
+        `PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:uaid`,
+        `PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:broker`,
+      ],
       ready: true,
     });
     return;
@@ -1391,7 +1423,8 @@ async function runStart() {
   console.log('Recommended next steps:');
   console.log(`  ${CLI_COMMAND} doctor`);
   console.log(`  ${CLI_COMMAND} flow:direct`);
-  console.log(`  ${CLI_COMMAND} flow:broker`);
+  console.log(`  PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:uaid`);
+  console.log(`  PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia ${CLI_COMMAND} flow:broker`);
 }
 
 function normalizePrivateKey(value, label) {
@@ -1550,6 +1583,44 @@ function getBuiltInEvaluatorCatalog(networkId) {
   return catalog;
 }
 
+function buildRuntimeWitnessLabel(runtimeWitness) {
+  if (runtimeWitness === 'buyer-uaid') {
+    return 'buyer-uaid string';
+  }
+  if (runtimeWitness === 'none') {
+    return 'none';
+  }
+  return 'custom runtime bytes';
+}
+
+function buildConditionDescription(kind, decoded) {
+  if (kind === 'timeRangeCondition' && decoded) {
+    return `Purchase window ${formatTimestamp(decoded.notBefore)} -> ${formatTimestamp(decoded.notAfter)}`;
+  }
+  if (kind === 'uaidOwnershipCondition' && decoded) {
+    return `Requires buyer UAID hash ${decoded.requiredBuyerUaidHash} and ERC-8004 agent ${decoded.agentId} at ${decoded.identityRegistry}`;
+  }
+  if (kind === 'addressAllowlistCondition' && Array.isArray(decoded)) {
+    return `Allows ${decoded.length} wallet${decoded.length === 1 ? '' : 's'}`;
+  }
+  if (kind) {
+    return `Built-in evaluator: ${kind}`;
+  }
+  return 'Custom evaluator condition';
+}
+
+function serializeEvaluatorRegistration(evaluator, registration, builtIn = null) {
+  return {
+    active: registration.active,
+    address: evaluator,
+    builtIn: registration.builtIn,
+    builtInKind: builtIn?.kind || null,
+    metadataHash: registration.metadataHash,
+    registeredAt: registration.registeredAt,
+    registrant: registration.registrant,
+  };
+}
+
 function decodeConditionConfig(kind, configData) {
   try {
     if (kind === 'timeRangeCondition') {
@@ -1621,9 +1692,11 @@ async function readPolicyConditions({ publicClient, networkId, policyId }) {
       configData,
       configHash,
       configSummary: decoded.decoded,
+      description: buildConditionDescription(builtIn?.kind || null, decoded.decoded),
       evaluator,
-      evaluatorRegistration: registration,
+      evaluatorRegistration: serializeEvaluatorRegistration(evaluator, registration, builtIn),
       index,
+      runtimeWitnessLabel: buildRuntimeWitnessLabel(decoded.runtimeWitness),
       runtimeWitness: decoded.runtimeWitness,
     });
   }
@@ -1689,6 +1762,19 @@ function printPolicySummary(policyId, policy) {
   printField('ConditionsHash', policy.conditionsHash);
 }
 
+function printPolicyConditions(conditions) {
+  if (CLI_RUNTIME.json || CLI_RUNTIME.quiet || conditions.length === 0) {
+    return;
+  }
+  console.log('Conditions       see below');
+  for (const condition of conditions) {
+    const label = condition.builtInKind || 'custom';
+    console.log(`  - [${condition.index}] ${label}: ${condition.description}`);
+    console.log(`    evaluator=${condition.evaluator}`);
+    console.log(`    witness=${condition.runtimeWitnessLabel}`);
+  }
+}
+
 function printReceiptSummary(receiptTokenId, receipt) {
   printField('Receipt', receiptTokenId);
   printField('Policy', receipt.policyId);
@@ -1732,6 +1818,15 @@ function serializePolicy(policyId, policy) {
     priceWei: policy.price,
     provider: policy.provider,
     providerUaidHash: policy.providerUaidHash,
+  };
+}
+
+function serializePolicyForDisplay(policyId, policy, conditions = []) {
+  return {
+    ...serializePolicy(policyId, policy),
+    category: buildPolicyCategory(conditions),
+    conditions,
+    receiptSemantics: 'purchase-time evaluator checks, then policy-active and dataset-active status for access resolution',
   };
 }
 
@@ -2149,22 +2244,81 @@ function getChainFromOptions(options) {
 async function showContracts(options) {
   const networkId = getNetworkIdFromOptions(options);
   const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const policyVault = buildPolicyVaultAddress(networkId);
+  const paymentModule = buildPaymentModuleAddress(networkId);
+  const accessReceipt = buildAccessReceiptAddress(networkId);
+  const deployment = loadDeployment(networkId);
+  const builtInEvaluators = Object.entries(deployment.contracts?.builtInPolicyEvaluators || {}).map(
+    ([kind, entry]) => ({
+      address: getAddress(entry.address),
+      kind,
+    }),
+  );
   const payload = {
-    accessReceipt: buildAccessReceiptAddress(networkId),
+    accessReceipt,
+    builtInEvaluators,
     identityRegistry: buildIdentityRegistryAddress(networkId),
     network: chain.name,
-    paymentModule: buildPaymentModuleAddress(networkId),
-    policyVault: buildPolicyVaultAddress(networkId),
+    onchain: {
+      datasetCount: null,
+      paymentModulePolicyVault: null,
+      policyCount: null,
+      receiptPaymentModule: null,
+    },
+    paymentModule,
+    policyVault,
   };
+
+  try {
+    payload.onchain.policyCount = await publicClient.readContract({
+      address: policyVault,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'policyCount',
+    });
+    payload.onchain.datasetCount = await publicClient.readContract({
+      address: policyVault,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'datasetCount',
+    });
+    payload.onchain.paymentModulePolicyVault = await publicClient.readContract({
+      address: paymentModule,
+      abi: parseAbi(['function policyVault() view returns (address)']),
+      functionName: 'policyVault',
+    });
+    payload.onchain.receiptPaymentModule = await publicClient.readContract({
+      address: accessReceipt,
+      abi: parseAbi(['function paymentModule() view returns (address)']),
+      functionName: 'paymentModule',
+    });
+  } catch (error) {
+    payload.onchain.error = error instanceof Error ? error.message : `${error}`;
+  }
+
   if (CLI_RUNTIME.json) {
     emitResult('contracts', payload);
     return;
   }
   printHeading(`Contracts on ${chain.name}`);
-  printField('PolicyVault', payload.policyVault);
-  printField('PaymentModule', payload.paymentModule);
-  printField('AccessReceipt', payload.accessReceipt);
+  printField('PolicyVault', policyVault);
+  printField('PaymentModule', paymentModule);
+  printField('AccessReceipt', accessReceipt);
   printField('Identity reg', payload.identityRegistry);
+  if (payload.onchain.error) {
+    printWarning(`Unable to resolve onchain wiring: ${payload.onchain.error}`);
+    return;
+  }
+  printField('datasetCount', payload.onchain.datasetCount);
+  printField('policyCount', payload.onchain.policyCount);
+  printField('PM->Vault', payload.onchain.paymentModulePolicyVault);
+  printField('Receipt->PM', payload.onchain.receiptPaymentModule);
+  if (payload.builtInEvaluators.length > 0) {
+    console.log('');
+    console.log('Built-in evaluators');
+    for (const evaluator of payload.builtInEvaluators) {
+      console.log(`  - ${evaluator.kind}: ${evaluator.address}`);
+    }
+  }
 }
 
 async function listDatasetsCommand(options) {
@@ -2381,9 +2535,7 @@ async function listPoliciesCommand(options) {
       policyId,
     });
     items.push({
-      ...serializePolicy(policyId, policy),
-      category: buildPolicyCategory(conditions),
-      conditions,
+      ...serializePolicyForDisplay(policyId, policy, conditions),
       network: chain.name,
     });
     if (CLI_RUNTIME.json) {
@@ -2391,6 +2543,7 @@ async function listPoliciesCommand(options) {
     }
     console.log('');
     printPolicySummary(policyId, policy);
+    printPolicyConditions(conditions);
   }
   if (CLI_RUNTIME.json) {
     emitResult('policies', {
@@ -2418,9 +2571,7 @@ async function getPolicyCommand(options) {
     policyId,
   });
   const payload = {
-    ...serializePolicy(policyId, policy),
-    category: buildPolicyCategory(conditions),
-    conditions,
+    ...serializePolicyForDisplay(policyId, policy, conditions),
     network: chain.name,
   };
   if (CLI_RUNTIME.json) {
@@ -2429,6 +2580,117 @@ async function getPolicyCommand(options) {
   }
   printHeading(`Policy ${policyId} on ${chain.name}`);
   printPolicySummary(policyId, policy);
+  printPolicyConditions(conditions);
+}
+
+async function listEvaluatorsCommand(options) {
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const policyVaultAddress = buildPolicyVaultAddress(networkId);
+  const catalog = getBuiltInEvaluatorCatalog(networkId);
+  const discoveredAddresses = [];
+  let discoveryMode = 'onchain-index';
+
+  try {
+    const count = await publicClient.readContract({
+      address: policyVaultAddress,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'getPolicyEvaluatorCount',
+    });
+    for (let index = 0n; index < count; index += 1n) {
+      const evaluator = await publicClient.readContract({
+        address: policyVaultAddress,
+        abi: POLICY_VAULT_ABI,
+        functionName: 'getPolicyEvaluatorAt',
+        args: [index],
+      });
+      discoveredAddresses.push(getAddress(evaluator));
+    }
+  } catch {
+    discoveryMode = 'manifest';
+    for (const builtIn of Object.values(catalog)) {
+      discoveredAddresses.push(getAddress(builtIn.address));
+    }
+  }
+
+  const uniqueAddresses = [...new Set(discoveredAddresses.map((entry) => normalizeAddress(entry)))];
+  const items = [];
+
+  for (const normalizedAddress of uniqueAddresses) {
+    const evaluator = getAddress(normalizedAddress);
+    try {
+      const registration = await publicClient.readContract({
+        address: policyVaultAddress,
+        abi: POLICY_VAULT_ABI,
+        functionName: 'getPolicyEvaluator',
+        args: [evaluator],
+      });
+      items.push(serializeEvaluatorRegistration(evaluator, registration, catalog[normalizeAddress(evaluator)] || null));
+    } catch {
+      items.push({
+        active: false,
+        address: evaluator,
+        builtIn: Boolean(catalog[normalizeAddress(evaluator)]),
+        builtInKind: catalog[normalizeAddress(evaluator)]?.kind || null,
+        metadataHash: zeroHash(),
+        registeredAt: 0n,
+        registrant: zeroAddress,
+      });
+    }
+  }
+
+  if (CLI_RUNTIME.json) {
+    emitResult('evaluators', {
+      count: BigInt(items.length),
+      discoveryMode,
+      items,
+      network: chain.name,
+    });
+    return;
+  }
+  printHeading(`Evaluators on ${chain.name}`);
+  printField('Total', items.length);
+  printField('Source', discoveryMode);
+  for (const item of items) {
+    console.log('');
+    printField('Evaluator', item.address);
+    printField('Built-in', item.builtInKind || item.builtIn);
+    printField('Active', item.active);
+    printField('Registrant', item.registrant);
+    printField('Metadata', item.metadataHash);
+  }
+}
+
+async function getEvaluatorCommand(options) {
+  const evaluator = getAddress(requireOption(options, ['evaluator', 'address'], 'evaluator address'));
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const registration = await publicClient.readContract({
+    address: buildPolicyVaultAddress(networkId),
+    abi: POLICY_VAULT_ABI,
+    functionName: 'getPolicyEvaluator',
+    args: [evaluator],
+  });
+  const payload = {
+    ...serializeEvaluatorRegistration(
+      evaluator,
+      registration,
+      getBuiltInEvaluatorCatalog(networkId)[normalizeAddress(evaluator)] || null,
+    ),
+    network: chain.name,
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('evaluator', payload);
+    return;
+  }
+  printHeading(`Evaluator on ${chain.name}`);
+  printField('Evaluator', payload.address);
+  printField('Built-in', payload.builtInKind || payload.builtIn);
+  printField('Active', payload.active);
+  printField('Registrant', payload.registrant);
+  printField('Metadata', payload.metadataHash);
 }
 
 function resolveAllowlistAccounts(options) {
@@ -2561,6 +2823,13 @@ async function createUaidPolicyCommand(options) {
   const identityRegistry = getAddress(
     readOption(options, ['identity-registry'], buildIdentityRegistryAddress(networkId)),
   );
+  if (identityRegistry === zeroAddress) {
+    throw new CliError(
+      'IDENTITY_REGISTRY_MISSING',
+      `No identity registry is configured for ${networkId}.`,
+      `Provide --identity-registry or run on Arbitrum Sepolia with PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia.`,
+    );
+  }
   const conditions = [];
   if (expiresAt > 0n) {
     const timeRangeEvaluator = resolveConditionEvaluatorAddress(
@@ -3106,10 +3375,7 @@ async function exportPolicyCommand(options) {
     exportedAt: new Date().toISOString(),
     network: networkId,
     version: 1,
-    policy: {
-      ...serializePolicy(policyId, policy),
-      conditions,
-    },
+    policy: serializePolicyForDisplay(policyId, policy, conditions),
   };
   const outputPath = resolveOutputPath(options);
   if (outputPath) {
@@ -3322,6 +3588,8 @@ async function verifyBundleCommand(options) {
       args: [policyId],
     });
     result.policy = serializePolicy(policyId, policy);
+    result.policy.receiptSemantics =
+      'purchase-time evaluator checks, then policy-active and dataset-active status for access resolution';
     result.matchesOnChain = policy.ciphertextHash === bundle.ciphertextHash
       && policy.keyCommitment === bundle.keyCommitment;
     const buyerValue = readOption(options, ['buyer'], null);
@@ -3763,7 +4031,213 @@ async function runUaidPolicyFlow({
   };
 }
 
-async function demoUaidFlow() {
+async function runDirectMarketplaceFlow() {
+  const networkId = getSelectedNetworkId();
+  const chain = getSelectedChain(networkId);
+  const agentKey = requireEnvValue('ETH_PK', {
+    description: 'agent wallet private key',
+  });
+  const providerKey = requireEnvValue('ETH_PK_2', {
+    description: 'provider wallet private key',
+  });
+  const publicClient = getPublicClient(chain);
+  const agentWalletClient = getWalletClient({
+    privateKey: agentKey.value,
+    chain,
+  });
+  const providerWalletClient = getWalletClient({
+    privateKey: providerKey.value,
+    chain,
+  });
+  const policyVaultAddress = buildPolicyVaultAddress(networkId);
+  const paymentModuleAddress = buildPaymentModuleAddress(networkId);
+  const accessReceiptAddress = buildAccessReceiptAddress(networkId);
+  const providerUaid = resolvePreferredEnvValue(
+    'PROGRAMMABLE_SECRETS_PROVIDER_UAID',
+    ['DEMO_PROVIDER_UAID'],
+    'did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab',
+  ).value;
+  const datasetTitle = readOption(
+    CLI_RUNTIME.globalOptions,
+    ['dataset-title'],
+    'TSLA Volatility Model',
+  );
+  const priceWei = BigInt(
+    resolvePreferredEnvValue(
+      'PROGRAMMABLE_SECRETS_PRICE_WEI',
+      ['DEMO_PRICE_WEI'],
+      '10000000000000',
+    ).value,
+  );
+  const expiresAt = BigInt(
+    Number(
+      resolvePreferredEnvValue(
+        'PROGRAMMABLE_SECRETS_EXPIRES_AT_UNIX',
+        ['DEMO_EXPIRES_AT_UNIX'],
+        '',
+      ).value || '',
+    ) || Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+  );
+  const plaintext = JSON.stringify(
+    {
+      market: 'TSLA',
+      product: 'volatility-surface',
+      strategy: 'volatility-arbitrage',
+      chain: chain.name,
+      generatedAt: new Date().toISOString(),
+    },
+    null,
+    2,
+  );
+  const plaintextBuffer = Buffer.from(plaintext, 'utf8');
+  const encryptedPayload = encryptPayload(plaintextBuffer);
+  const ciphertextHash = keccak256(`0x${encryptedPayload.ciphertext.toString('hex')}`);
+  const keyCommitment = keccak256(`0x${encryptedPayload.contentKey.toString('hex')}`);
+  const metadataHash = keccak256(
+    toBytes(
+      JSON.stringify({
+        title: datasetTitle,
+        mimeType: 'application/json',
+        plaintextHash: sha256Hex(plaintextBuffer),
+      }),
+    ),
+  );
+  const providerUaidHash = keccak256(toBytes(providerUaid));
+  const timeRangeEvaluator = resolveConditionEvaluatorAddress(networkId, 'timeRangeCondition');
+  const conditions = [
+    {
+      evaluator: timeRangeEvaluator,
+      configData: encodeAbiParameters(
+        parseAbiParameters('(uint64 notBefore,uint64 notAfter) value'),
+        [{ notBefore: 0n, notAfter: expiresAt }],
+      ),
+    },
+  ];
+
+  printHeading('Direct Marketplace Flow');
+  printField('Network', chain.name);
+  printField('Agent wallet', agentWalletClient.account.address);
+  printField('Provider wallet', providerWalletClient.account.address);
+  printField('PolicyVault', policyVaultAddress);
+  printField('PaymentModule', paymentModuleAddress);
+  printField('AccessReceipt', accessReceiptAddress);
+  printField('Agent key src', agentKey.source);
+  printField('Provider src', providerKey.source);
+
+  const datasetTx = await providerWalletClient.writeContract({
+    address: policyVaultAddress,
+    abi: POLICY_VAULT_ABI,
+    functionName: 'registerDataset',
+    args: [ciphertextHash, keyCommitment, metadataHash, providerUaidHash],
+    chain,
+    account: providerWalletClient.account,
+  });
+  const datasetReceipt = await publicClient.waitForTransactionReceipt({ hash: datasetTx });
+  const datasetEvent = await decodeIndexedEvent({
+    abi: POLICY_VAULT_ABI,
+    receipt: datasetReceipt,
+    eventName: 'DatasetRegistered',
+  });
+  const datasetId = Number(datasetEvent.args.datasetId);
+
+  printStep(1, `Registered dataset #${datasetId}`);
+  printField('Dataset tx', datasetTx);
+  printExplorerLink(chain, datasetTx);
+
+  const createPolicyTx = await providerWalletClient.writeContract({
+    address: policyVaultAddress,
+    abi: POLICY_VAULT_ABI,
+    functionName: 'createPolicyForDataset',
+    args: [
+      BigInt(datasetId),
+      providerWalletClient.account.address,
+      zeroAddress,
+      priceWei,
+      metadataHash,
+      conditions,
+    ],
+    chain,
+    account: providerWalletClient.account,
+  });
+  const createPolicyReceipt = await publicClient.waitForTransactionReceipt({ hash: createPolicyTx });
+  const policyEvent = await decodeIndexedEvent({
+    abi: POLICY_VAULT_ABI,
+    receipt: createPolicyReceipt,
+    eventName: 'PolicyCreated',
+  });
+  const policyId = Number(policyEvent.args.policyId);
+
+  printStep(2, `Created policy #${policyId}`);
+  printField('Policy tx', createPolicyTx);
+  printExplorerLink(chain, createPolicyTx);
+  printField('Price', `${formatEther(priceWei)} ETH`);
+  printField('Access window', `${formatTimestamp(0)} -> ${formatTimestamp(expiresAt)}`);
+
+  const purchaseTx = await agentWalletClient.writeContract({
+    address: paymentModuleAddress,
+    abi: PAYMENT_MODULE_ABI,
+    functionName: 'purchase',
+    args: [BigInt(policyId), agentWalletClient.account.address, ['0x']],
+    value: priceWei,
+    chain,
+    account: agentWalletClient.account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: purchaseTx });
+  const receiptTokenId = await publicClient.readContract({
+    address: paymentModuleAddress,
+    abi: PAYMENT_MODULE_ABI,
+    functionName: 'receiptOfPolicyAndBuyer',
+    args: [BigInt(policyId), agentWalletClient.account.address],
+  });
+  const hasAccess = await publicClient.readContract({
+    address: paymentModuleAddress,
+    abi: PAYMENT_MODULE_ABI,
+    functionName: 'hasAccess',
+    args: [BigInt(policyId), agentWalletClient.account.address],
+  });
+  const receipt = await publicClient.readContract({
+    address: accessReceiptAddress,
+    abi: ACCESS_RECEIPT_ABI,
+    functionName: 'getReceipt',
+    args: [receiptTokenId],
+  });
+  const decryptedPlaintext = decryptPayload({
+    ciphertext: encryptedPayload.ciphertext,
+    contentKey: encryptedPayload.contentKey,
+    iv: encryptedPayload.iv,
+  }).toString('utf8');
+
+  printStep(3, 'Purchased policy and verified local unlock');
+  printField('Purchase tx', purchaseTx);
+  printExplorerLink(chain, purchaseTx);
+  printField('Receipt token', receiptTokenId);
+  printField('Has access', hasAccess);
+  printField('Receipt buyer', receipt.buyer);
+  printField('Receipt policy', receipt.policyId);
+  printField('Decrypted bytes', Buffer.byteLength(decryptedPlaintext, 'utf8'));
+
+  if (CLI_RUNTIME.json) {
+    emitResult('flow-direct', {
+      accessReceiptAddress,
+      createPolicyTx,
+      datasetId,
+      datasetTx,
+      decryptedPlaintext,
+      hasAccess,
+      network: chain.name,
+      paymentModuleAddress,
+      policyId,
+      policyVaultAddress,
+      purchaseTx,
+      receipt: serializeReceipt(receiptTokenId, receipt),
+    });
+    return;
+  }
+  console.log(decryptedPlaintext);
+  printSuccess('Direct marketplace flow completed.');
+}
+
+async function runDirectUaidFlow() {
   const networkId = getSelectedNetworkId();
   const chain = getSelectedChain(networkId);
   const agentKey = requireEnvValue('ETH_PK', {
@@ -3858,12 +4332,18 @@ async function demoUaidFlow() {
   printField('Receipt policy', result.receipt.policyId);
   printField('Decrypted bytes', Buffer.byteLength(result.decryptedPlaintext, 'utf8'));
   if (CLI_RUNTIME.json) {
-    emitResult('flow-direct', {
+    emitResult('flow-uaid', {
+      accessReceiptAddress,
+      createPolicyTx: result.createPolicyTx,
       datasetId: result.datasetId,
+      datasetTx: result.datasetTx,
       decryptedPlaintext: result.decryptedPlaintext,
       hasAccess: result.hasAccess,
+      identityRegistryAddress,
       network: chain.name,
+      paymentModuleAddress,
       policyId: result.policyId,
+      policyVaultAddress,
       purchaseTx: result.purchaseTx,
       receipt: serializeReceipt(result.receiptTokenId, result.receipt),
       registerTx,
@@ -3939,14 +4419,20 @@ async function demoBrokerUaidFlow() {
     printField('Receipt policy', result.receipt.policyId);
     if (CLI_RUNTIME.json) {
       emitResult('flow-broker', {
+        accessReceiptAddress,
         brokerAgentId: brokerRegistration.brokerAgentId,
         brokerUaid: brokerRegistration.brokerUaid,
+        createPolicyTx: result.createPolicyTx,
         datasetId: result.datasetId,
+        datasetTx: result.datasetTx,
         decryptedPlaintext: result.decryptedPlaintext,
         erc8004AgentId: brokerRegistration.erc8004AgentId,
         hasAccess: result.hasAccess,
+        identityRegistryAddress,
         network: chain.name,
+        paymentModuleAddress: buildPaymentModuleAddress(networkId),
         policyId: result.policyId,
+        policyVaultAddress: buildPolicyVaultAddress(networkId),
         purchaseTx: result.purchaseTx,
         receipt: serializeReceipt(result.receiptTokenId, result.receipt),
       });
@@ -4001,6 +4487,9 @@ async function runPoliciesCommand(tokens) {
       return;
     case 'get':
       await getPolicyCommand(options);
+      return;
+    case 'evaluators':
+      await listEvaluatorsCommand(options);
       return;
     case 'export':
       await exportPolicyCommand(options);
@@ -4087,6 +4576,25 @@ async function runIdentityCommand(tokens) {
   }
 }
 
+async function runEvaluatorsCommand(tokens) {
+  const { positionals, options } = parseCliArgs(tokens);
+  const subcommand = positionals[0] || 'list';
+  switch (subcommand) {
+    case 'list':
+      await listEvaluatorsCommand(options);
+      return;
+    case 'get':
+      await getEvaluatorCommand(options);
+      return;
+    default:
+      throw new CliError(
+        'UNKNOWN_SUBCOMMAND',
+        `Unknown evaluators command "${subcommand}".`,
+        `See "${CLI_COMMAND} help evaluators".`,
+      );
+  }
+}
+
 async function runKrsCommand(tokens) {
   const { positionals, options } = parseCliArgs(tokens);
   const subcommand = positionals[0] || 'encrypt';
@@ -4140,13 +4648,19 @@ async function dispatchCommand(commandName, tokens, forcePreview = false) {
       await updatePrices();
       return;
     case 'flow:direct':
-      await demoUaidFlow();
+      await runDirectMarketplaceFlow();
+      return;
+    case 'flow:uaid':
+      await runDirectUaidFlow();
       return;
     case 'flow:broker':
       await demoBrokerUaidFlow();
       return;
     case 'contracts':
       await showContracts(parsed.options);
+      return;
+    case 'evaluators':
+      await runEvaluatorsCommand(effectiveTokens);
       return;
     case 'datasets':
       await runDatasetsCommand(effectiveTokens);

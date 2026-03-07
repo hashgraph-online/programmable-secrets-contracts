@@ -10,6 +10,7 @@ import {
     AlreadyHasReceipt,
     EvaluatorAlreadyRegistered,
     EvaluatorNotRegistered,
+    InvalidConditionInputCount,
     InvalidPrice,
     NotPolicyProvider,
     PolicyInactive,
@@ -233,11 +234,29 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         paymentModule.purchase{value: 2 ether}(policyId, BUYER, runtimeInputs);
     }
 
+    function testPurchaseRejectsConditionRuntimeInputCountMismatch() public {
+        uint256 policyId = _createDatasetPolicy(1 ether, uint64(block.timestamp + 1 days), false);
+
+        vm.prank(BUYER);
+        vm.expectRevert(InvalidConditionInputCount.selector);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, _emptyRuntimeInputs(0));
+    }
+
     function testPurchaseRequiresAllowlistWhenEnabled() public {
         uint256 policyId = _createAllowlistedDatasetPolicy(BUYER, 1 ether, 0);
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(1);
 
         _assertPolicyConditionFailure(OTHER_BUYER, policyId, OTHER_BUYER, runtimeInputs, 1 ether, 0);
+    }
+
+    function testPurchaseAllowsAllowlistAndTimeboundComposition() public {
+        uint256 policyId = _createAllowlistedDatasetPolicy(BUYER, 1 ether, uint64(block.timestamp + 1 days));
+
+        vm.prank(BUYER);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, BUYER, _emptyRuntimeInputs(2));
+
+        assertEqUint(receiptTokenId, accessReceipt.receiptOfPolicyAndBuyer(policyId, BUYER));
+        assertEqBool(paymentModule.hasAccess(policyId, BUYER), true);
     }
 
     function testPurchaseRejectsSecondReceiptForSameBuyer() public {
@@ -332,6 +351,19 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         AccessReceipt.Receipt memory receipt = accessReceipt.getReceipt(receiptTokenId);
         assertEqUint(receipt.policyId, policyId);
         assertEqAddress(receipt.buyer, BUYER);
+        assertEqBool(paymentModule.hasAccess(policyId, BUYER), true);
+    }
+
+    function testPurchaseAllowsUaidAndTimeboundComposition() public {
+        uint256 agentId = _registerBuyerAgent(BUYER, "volatility-agent");
+        uint256 policyId =
+            _createUaidBoundPolicy(1 ether, uint64(block.timestamp + 1 days), REQUIRED_BUYER_UAID, agentId);
+        bytes[] memory runtimeInputs = _runtimeInputsForUaid(2, 1, REQUIRED_BUYER_UAID);
+
+        vm.prank(BUYER);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, BUYER, runtimeInputs);
+
+        assertEqUint(receiptTokenId, accessReceipt.receiptOfPolicyAndBuyer(policyId, BUYER));
         assertEqBool(paymentModule.hasAccess(policyId, BUYER), true);
     }
 }

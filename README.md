@@ -58,8 +58,8 @@ Current deployed addresses:
 
 | Network | PolicyVault | PaymentModule | AccessReceipt | IdentityRegistry |
 | --- | --- | --- | --- | --- |
-| Robinhood Chain Testnet | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x5113b58890a712D3fDdb80e800fbe2573FB46C06` | `0xF287C269D17B923eBFFd1Eb76E6c3075286124Ad` |
-| Arbitrum Sepolia | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x5113b58890a712D3fDdb80e800fbe2573FB46C06` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
+| Robinhood Chain Testnet | `0x0e65116044C731A1e0380c1E39f439f93fb77416` | `0x82637bff0e39f0B65C17BbC69f768602f093a1Ee` | `0xE39Ae07F6226156d97C76B4ec6ac8697890Dd350` | `0x0000000000000000000000000000000000000000` |
+| Arbitrum Sepolia | `0xEdf7Fd3B2d0fD00Dc2588BBd662bF82584343992` | `0xE3997689e04DfdE9Bf83B6CFA7FDb68099c43B9d` | `0xbE3c72A7F2914585AC018A85498449Dd8014E451` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 
 Built-in policy evaluators are also deployed and recorded in each manifest:
 - `TimeRangeCondition`
@@ -152,10 +152,12 @@ Events:
 - Every receipt token resolves to the same metadata URI: `ipfs://bafkreibw3osbcrk7w522tcjuz5a4ihffd3bfbjkwmfso5esxyfml2cfal4`.
 - Condition modules own their own validation rules. For example, `TimeRangeCondition` treats `notAfter == block.timestamp` as expired.
 - UAID-bound purchases pass the exact buyer UAID string in the runtime input consumed by `UaidOwnershipCondition`.
-- `PaymentModule.hasAccess` reports active entitlement, not merely historical purchase. It returns `false` once a time-bound policy expires or a dataset is deactivated.
-- `AccessReceipt` remains the durable historical proof of purchase, while `PaymentModule.hasDatasetAccess` resolves whether any active policy on a dataset still grants access.
+- Evaluators are enforced at purchase time. `PaymentModule.hasAccess` and `hasDatasetAccess` resolve durable entitlement by checking receipt existence plus current policy and dataset active state.
+- Time range conditions govern whether a purchase can happen, not a post-purchase streaming lease. A provider can still deactivate the dataset or policy to revoke active access resolution.
+- `AccessReceipt` remains the durable historical proof of purchase, while `PaymentModule.hasDatasetAccess` resolves whether any currently active policy on a dataset still maps to the buyer's receipt.
 - Allowlist enforcement is onchain through `AddressAllowlistCondition`.
 - Offchain key release should validate both the signed buyer request and current onchain access state.
+- Older deployments may not expose evaluator index helper reads (`getPolicyEvaluatorCount`, `getPolicyEvaluatorAt`). The CLI falls back to manifest discovery when those helpers are unavailable.
 
 ## Built-In Policy Modules
 
@@ -187,7 +189,7 @@ Run the full contract suite:
 ```bash
 forge fmt --check
 forge lint
-forge build --sizes
+forge build --sizes --skip script
 forge test -vvv
 ```
 
@@ -204,8 +206,9 @@ forge inspect --json UaidOwnershipCondition abi > abis/UaidOwnershipCondition.ab
 
 ## CLI Workflows
 
-The contracts repo includes two live CLI workflows in `script/manage-policies.mjs`:
-- `flow:direct` runs the direct onchain ERC-8004 path
+The contracts repo includes three live CLI workflows in `script/manage-policies.mjs`:
+- `flow:direct` runs the default Robinhood marketplace path: dataset registration, timebound policy creation, purchase, and local unlock verification
+- `flow:uaid` runs the direct onchain ERC-8004 path on a chain with a live `IdentityRegistry`
 - `flow:broker` registers through the local Registry Broker with `RegistryBrokerClient`, then proves the same UAID-gated purchase flow against the selected live `IdentityRegistry`
 
 The package also exposes a first-class binary:
@@ -323,7 +326,8 @@ Optional overrides:
 - `REGISTRY_BROKER_ACCOUNT_ID`
 - `REGISTRY_BROKER_ERC8004_NETWORK`
 
-By default both workflows use Robinhood testnet. Set `PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia` if you want the Arbitrum Sepolia path.
+`flow:direct` defaults to Robinhood testnet.
+`flow:uaid` and `flow:broker` should target Arbitrum Sepolia unless your selected network manifest has a live `IdentityRegistry`.
 
 If you want to point at a different env file, set `PROGRAMMABLE_SECRETS_ENV_PATH` before running the command.
 
@@ -343,7 +347,9 @@ Read-only commands:
 
 ```bash
 programmable-secret contracts
+programmable-secret contracts --agent-safe
 programmable-secret help --json
+programmable-secret policies evaluators
 programmable-secret datasets list
 programmable-secret datasets get --dataset-id 1
 programmable-secret datasets export --dataset-id 1 --output dataset-1.json
@@ -366,9 +372,10 @@ programmable-secret policies create-timebound --dataset-id 1 --price-eth 0.00001
 programmable-secret policies create-uaid --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --required-buyer-uaid uaid:aid:... --agent-id 97
 programmable-secret policies import --file policy-1.json
 programmable-secret policies update --policy-id 1 --price-eth 0.00002 --active true --metadata-json '{"title":"Updated access"}'
-programmable-secret policies allowlist --policy-id 1 --accounts 0xabc,0xdef --allowed true
 programmable-secret purchase --policy-id 1
 ```
+
+`policies allowlist` is intentionally immutable in the evaluator-array model. Recreate the policy with a new allowlist config and deactivate the prior policy.
 
 The CLI accepts either direct hashes or operator-friendly raw inputs for dataset registration:
 - `--ciphertext-hash` or `--ciphertext`
@@ -450,7 +457,8 @@ Each manifest is expected to record:
 
 ### Deterministic Same-Address Deployment
 
-The current checked-in deployments were created deterministically with `script/Deploy.s.sol:DeployCreate2`, so the app-facing contract addresses match across Robinhood Chain Testnet and Arbitrum Sepolia.
+The current checked-in manifests reflect live deployments and may not match across Robinhood Chain Testnet and Arbitrum Sepolia.
+If you need deterministic same-address deployment, use the CREATE2 path below and redeploy both networks in lockstep.
 
 If you need to reproduce the same deployment pattern on a fresh environment, use the CREATE2-based deployment path:
 - keep `DEPLOYER_ADDRESS` and `CONTRACT_OWNER` identical on both networks
