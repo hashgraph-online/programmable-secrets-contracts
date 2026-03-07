@@ -361,6 +361,7 @@ jobs:
 
       - name: Verify PolicyVault implementation on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           case "$NATIVE_VERIFIER" in
             etherscan)
@@ -398,6 +399,7 @@ jobs:
 
       - name: Verify PaymentModule implementation on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           case "$NATIVE_VERIFIER" in
             etherscan)
@@ -435,6 +437,7 @@ jobs:
 
       - name: Verify AccessReceipt on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           constructor_args="$(cast abi-encode "constructor(address)" "${{ steps.deployment.outputs.deployer_address }}")"
           case "$NATIVE_VERIFIER" in
@@ -475,6 +478,7 @@ jobs:
 
       - name: Verify TimeRangeCondition on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           case "$NATIVE_VERIFIER" in
             etherscan)
@@ -512,6 +516,7 @@ jobs:
 
       - name: Verify UaidOwnershipCondition on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           case "$NATIVE_VERIFIER" in
             etherscan)
@@ -549,6 +554,7 @@ jobs:
 
       - name: Verify AddressAllowlistCondition on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           case "$NATIVE_VERIFIER" in
             etherscan)
@@ -586,6 +592,7 @@ jobs:
 
       - name: Verify PolicyVault proxy on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           initializer_calldata="$(cast calldata "initialize(address)" "${{ steps.deployment.outputs.deployer_address }}")"
           constructor_args="$(cast abi-encode "constructor(address,bytes)" "${{ steps.deployment.outputs.policy_vault_implementation }}" "$initializer_calldata")"
@@ -627,6 +634,7 @@ jobs:
 
       - name: Verify PaymentModule proxy on native explorer
         if: ${{ inputs.verify_native_explorer }}
+        continue-on-error: true
         run: |
           initializer_calldata="$(cast calldata "initialize(address,address,address)" "${{ steps.deployment.outputs.deployer_address }}" "${{ steps.deployment.outputs.policy_vault_proxy }}" "${{ steps.deployment.outputs.access_receipt_address }}")"
           constructor_args="$(cast abi-encode "constructor(address,bytes)" "${{ steps.deployment.outputs.payment_module_implementation }}" "$initializer_calldata")"
