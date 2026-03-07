@@ -8,12 +8,15 @@ import {PolicyVaultEvents} from "./Events.sol";
 import {
     DatasetInactive,
     DatasetNotFound,
+    InvalidAgentId,
     InvalidExpiry,
+    InvalidIdentityRegistry,
     InvalidDatasetHashes,
     InvalidPaymentToken,
     InvalidPolicyHashes,
     InvalidPolicyType,
     InvalidPrice,
+    InvalidRequiredBuyerUaid,
     NotDatasetProvider,
     NotPolicyProvider,
     PolicyNotFound
@@ -21,6 +24,7 @@ import {
 
 contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, PolicyVaultEvents {
     bytes32 public constant POLICY_TYPE_TIMEBOUND = keccak256("TIMEBOUND_V1");
+    bytes32 public constant POLICY_TYPE_UAID_ERC8004 = keccak256("UAID_ERC8004_V1");
 
     struct CreatePolicyConfig {
         address provider;
@@ -32,6 +36,9 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         bool allowlistEnabled;
         bytes32 metadataHash;
         bytes32 policyType;
+        bytes32 requiredBuyerUaidHash;
+        address identityRegistry;
+        uint256 agentId;
     }
 
     struct Policy {
@@ -49,6 +56,9 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         bytes32 providerUaidHash;
         uint256 datasetId;
         bytes32 policyType;
+        bytes32 requiredBuyerUaidHash;
+        address identityRegistry;
+        uint256 agentId;
     }
 
     struct Dataset {
@@ -116,7 +126,40 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             expiresAt: expiresAt,
             allowlistEnabled: allowlistEnabled,
             metadataHash: metadataHash,
-            policyType: POLICY_TYPE_TIMEBOUND
+            policyType: POLICY_TYPE_TIMEBOUND,
+            requiredBuyerUaidHash: bytes32(0),
+            identityRegistry: address(0),
+            agentId: 0
+        });
+        policyId = _createPolicyForDataset(config, allowlistAccounts);
+    }
+
+    function createUaidBoundPolicy(
+        uint256 datasetId,
+        address payout,
+        address paymentToken,
+        uint96 price,
+        uint64 expiresAt,
+        bool allowlistEnabled,
+        bytes32 metadataHash,
+        bytes32 requiredBuyerUaidHash,
+        address identityRegistry,
+        uint256 agentId,
+        address[] calldata allowlistAccounts
+    ) external returns (uint256 policyId) {
+        CreatePolicyConfig memory config = CreatePolicyConfig({
+            provider: msg.sender,
+            datasetId: datasetId,
+            payout: payout,
+            paymentToken: paymentToken,
+            price: price,
+            expiresAt: expiresAt,
+            allowlistEnabled: allowlistEnabled,
+            metadataHash: metadataHash,
+            policyType: POLICY_TYPE_UAID_ERC8004,
+            requiredBuyerUaidHash: requiredBuyerUaidHash,
+            identityRegistry: identityRegistry,
+            agentId: agentId
         });
         policyId = _createPolicyForDataset(config, allowlistAccounts);
     }
@@ -141,7 +184,10 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             expiresAt: expiresAt,
             allowlistEnabled: allowlistEnabled,
             metadataHash: metadataHash,
-            policyType: policyType
+            policyType: policyType,
+            requiredBuyerUaidHash: bytes32(0),
+            identityRegistry: address(0),
+            agentId: 0
         });
         policyId = _createPolicyForDataset(config, allowlistAccounts);
     }
@@ -219,7 +265,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
     }
 
     function isSupportedPolicyType(bytes32 policyType) public pure returns (bool) {
-        return policyType == POLICY_TYPE_TIMEBOUND;
+        return policyType == POLICY_TYPE_TIMEBOUND || policyType == POLICY_TYPE_UAID_ERC8004;
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
@@ -286,6 +332,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         }
         _validateExpiry(config.expiresAt);
         _validatePolicyMetadataHash(config.metadataHash);
+        _validatePolicyRequirements(config);
 
         policyId = ++policyCount;
 
@@ -304,7 +351,10 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             metadataHash: config.metadataHash,
             providerUaidHash: dataset.providerUaidHash,
             datasetId: config.datasetId,
-            policyType: config.policyType
+            policyType: config.policyType,
+            requiredBuyerUaidHash: config.requiredBuyerUaidHash,
+            identityRegistry: config.identityRegistry,
+            agentId: config.agentId
         });
         datasetPolicyIds[config.datasetId].push(policyId);
 
@@ -359,6 +409,21 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
     function _validatePolicyMetadataHash(bytes32 metadataHash) internal pure {
         if (metadataHash == bytes32(0)) {
             revert InvalidPolicyHashes();
+        }
+    }
+
+    function _validatePolicyRequirements(CreatePolicyConfig memory config) internal pure {
+        if (config.policyType != POLICY_TYPE_UAID_ERC8004) {
+            return;
+        }
+        if (config.requiredBuyerUaidHash == bytes32(0)) {
+            revert InvalidRequiredBuyerUaid();
+        }
+        if (config.identityRegistry == address(0)) {
+            revert InvalidIdentityRegistry();
+        }
+        if (config.agentId == 0) {
+            revert InvalidAgentId();
         }
     }
 }

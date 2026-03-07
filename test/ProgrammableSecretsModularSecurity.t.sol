@@ -5,7 +5,19 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {AccessReceipt} from "../src/AccessReceipt.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
-import {DatasetInactive, InvalidDatasetHashes, InvalidExpiry, PaymentFailed, PolicyExpired} from "../src/Errors.sol";
+import {
+    BuyerDoesNotOwnRequiredAgent,
+    BuyerUaidMismatch,
+    BuyerUaidRequired,
+    DatasetInactive,
+    InvalidAgentId,
+    InvalidDatasetHashes,
+    InvalidExpiry,
+    InvalidIdentityRegistry,
+    InvalidRequiredBuyerUaid,
+    PaymentFailed,
+    PolicyExpired
+} from "../src/Errors.sol";
 import {ProgrammableSecretsModularTestBase} from "./ProgrammableSecretsModularTestBase.sol";
 
 contract RejectingPayoutV2 {
@@ -40,7 +52,7 @@ contract ReenteringPayoutV2 {
 
         attempted = true;
         (succeeded,) = address(TARGET).call{value: reenterPrice}(
-            abi.encodeWithSignature("purchase(uint256,address)", reenterPolicyId, address(this))
+            abi.encodeWithSignature("purchase(uint256,address,string)", reenterPolicyId, address(this), "")
         );
     }
 }
@@ -57,7 +69,7 @@ contract ReceiptObserverV2 is IERC721Receiver {
     }
 
     function purchase(uint256 policyId, uint256 price) external {
-        PAYMENT_MODULE.purchase{value: price}(policyId, address(this));
+        PAYMENT_MODULE.purchase{value: price}(policyId, address(this), "");
     }
 
     function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
@@ -94,7 +106,10 @@ contract ZeroPayoutPolicyVaultV2 {
             metadataHash: keccak256("policy-metadata"),
             providerUaidHash: keccak256("uaid"),
             datasetId: 1,
-            policyType: keccak256("TIMEBOUND_V1")
+            policyType: keccak256("TIMEBOUND_V1"),
+            requiredBuyerUaidHash: bytes32(0),
+            identityRegistry: address(0),
+            agentId: 0
         });
     }
 
@@ -161,7 +176,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         vm.warp(block.timestamp + 1 days);
         vm.prank(BUYER);
         vm.expectRevert(PolicyExpired.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
     }
 
     function testPurchaseRevertsWhenPayoutRejectsEtherAndDoesNotMintReceipt() public {
@@ -176,7 +191,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(BUYER);
         vm.expectRevert(PaymentFailed.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
 
         assertTrue(!paymentModule.hasAccess(policyId, BUYER));
     }
@@ -199,7 +214,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         payout.configure(reenterPolicyId, 1 ether);
 
         vm.prank(BUYER);
-        paymentModule.purchase{value: 1 ether}(outerPolicyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(outerPolicyId, BUYER, "");
 
         assertTrue(payout.attempted());
         assertTrue(!payout.succeeded());
@@ -223,7 +238,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         uint256 datasetId = policyVault.getPolicy(policyId).datasetId;
 
         vm.prank(BUYER);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
 
         vm.prank(PROVIDER);
         policyVault.setDatasetActive(datasetId, false);
@@ -241,7 +256,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(BUYER);
         vm.expectRevert(DatasetInactive.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
     }
 
     function testPurchaseRejectsZeroPayoutAddress() public {
@@ -252,6 +267,95 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(BUYER);
         vm.expectRevert(INVALID_PAYOUT_ADDRESS_SELECTOR);
-        paymentModule.purchase{value: 1 ether}(1, BUYER);
+        paymentModule.purchase{value: 1 ether}(1, BUYER, "");
+    }
+
+    function testCreateUaidBoundPolicyRejectsZeroRequiredUaidHash() public {
+        uint256 datasetId = _registerDataset();
+        address[] memory emptyAllowlist = new address[](0);
+        vm.prank(PROVIDER);
+        vm.expectRevert(InvalidRequiredBuyerUaid.selector);
+        policyVault.createUaidBoundPolicy(
+            datasetId,
+            PAYOUT,
+            address(0),
+            1 ether,
+            0,
+            false,
+            POLICY_METADATA_HASH,
+            bytes32(0),
+            address(1),
+            1,
+            emptyAllowlist
+        );
+    }
+
+    function testCreateUaidBoundPolicyRejectsZeroIdentityRegistry() public {
+        uint256 datasetId = _registerDataset();
+        address[] memory emptyAllowlist = new address[](0);
+        vm.prank(PROVIDER);
+        vm.expectRevert(InvalidIdentityRegistry.selector);
+        policyVault.createUaidBoundPolicy(
+            datasetId,
+            PAYOUT,
+            address(0),
+            1 ether,
+            0,
+            false,
+            POLICY_METADATA_HASH,
+            keccak256(bytes(REQUIRED_BUYER_UAID)),
+            address(0),
+            1,
+            emptyAllowlist
+        );
+    }
+
+    function testCreateUaidBoundPolicyRejectsZeroAgentId() public {
+        uint256 datasetId = _registerDataset();
+        address[] memory emptyAllowlist = new address[](0);
+        vm.prank(PROVIDER);
+        vm.expectRevert(InvalidAgentId.selector);
+        policyVault.createUaidBoundPolicy(
+            datasetId,
+            PAYOUT,
+            address(0),
+            1 ether,
+            0,
+            false,
+            POLICY_METADATA_HASH,
+            keccak256(bytes(REQUIRED_BUYER_UAID)),
+            address(agentIdentityRegistry),
+            0,
+            emptyAllowlist
+        );
+    }
+
+    function testPurchaseRejectsUaidBoundPolicyWithoutUaid() public {
+        uint256 agentId = _registerBuyerAgent(BUYER, "volatility-agent");
+        uint256 policyId = _createUaidBoundPolicy(1 ether, 0, REQUIRED_BUYER_UAID, agentId);
+
+        vm.prank(BUYER);
+        vm.expectRevert(BuyerUaidRequired.selector);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
+    }
+
+    function testPurchaseRejectsUaidMismatch() public {
+        uint256 agentId = _registerBuyerAgent(BUYER, "volatility-agent");
+        uint256 policyId = _createUaidBoundPolicy(1 ether, 0, REQUIRED_BUYER_UAID, agentId);
+
+        vm.prank(BUYER);
+        vm.expectRevert(BuyerUaidMismatch.selector);
+        paymentModule.purchase{value: 1 ether}(
+            policyId, BUYER, "uaid:aid:wrong;uid=46630:1;registry=erc-8004;proto=erc-8004;nativeId=46630:1"
+        );
+    }
+
+    function testPurchaseRejectsAgentOwnershipMismatch() public {
+        uint256 agentId = _registerBuyerAgent(BUYER, "volatility-agent");
+        uint256 policyId = _createUaidBoundPolicy(1 ether, 0, REQUIRED_BUYER_UAID, agentId);
+
+        vm.prank(OTHER_BUYER);
+        vm.expectRevert(BuyerDoesNotOwnRequiredAgent.selector);
+        paymentModule.purchase{value: 1 ether}(policyId, OTHER_BUYER, REQUIRED_BUYER_UAID);
     }
 }

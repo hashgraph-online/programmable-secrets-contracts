@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {AgentIdentityRegistry} from "../src/AgentIdentityRegistry.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {AccessReceipt} from "../src/AccessReceipt.sol";
@@ -20,10 +21,13 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
     bytes32 internal constant METADATA_HASH = keccak256("dataset-metadata");
     bytes32 internal constant POLICY_METADATA_HASH = keccak256("policy-metadata");
     bytes32 internal constant PROVIDER_UAID_HASH = keccak256("uaid");
+    string internal constant REQUIRED_BUYER_UAID =
+        "uaid:aid:buyer-agent;uid=46630:1;registry=erc-8004;proto=erc-8004;nativeId=46630:1";
 
     PolicyVault internal policyVault;
     PaymentModule internal paymentModule;
     AccessReceipt internal accessReceipt;
+    AgentIdentityRegistry internal agentIdentityRegistry;
     PolicyVault internal policyVaultImplementation;
     PaymentModule internal paymentModuleImplementation;
     ERC1967Proxy internal policyVaultProxy;
@@ -37,6 +41,7 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         policyVault = PolicyVault(address(policyVaultProxy));
 
         accessReceipt = new AccessReceipt(UPGRADE_OWNER);
+        agentIdentityRegistry = new AgentIdentityRegistry(UPGRADE_OWNER);
 
         paymentModuleImplementation = new PaymentModule();
         paymentModuleProxy = new ERC1967Proxy(
@@ -86,6 +91,33 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         vm.prank(PROVIDER);
         policyId = policyVault.createTimeboundPolicy(
             datasetId, PAYOUT, address(0), price, expiresAt, true, POLICY_METADATA_HASH, allowlist
+        );
+    }
+
+    function _registerBuyerAgent(address owner, string memory agentDomain) internal returns (uint256 agentId) {
+        vm.prank(owner);
+        agentId = agentIdentityRegistry.registerAgent(agentDomain, string.concat("ipfs://", agentDomain));
+    }
+
+    function _createUaidBoundPolicy(uint96 price, uint64 expiresAt, string memory requiredBuyerUaid, uint256 agentId)
+        internal
+        returns (uint256 policyId)
+    {
+        uint256 datasetId = _registerDataset();
+        address[] memory emptyAllowlist = new address[](0);
+        vm.prank(PROVIDER);
+        policyId = policyVault.createUaidBoundPolicy(
+            datasetId,
+            PAYOUT,
+            address(0),
+            price,
+            expiresAt,
+            false,
+            POLICY_METADATA_HASH,
+            keccak256(bytes(requiredBuyerUaid)),
+            address(agentIdentityRegistry),
+            agentId,
+            emptyAllowlist
         );
     }
 }

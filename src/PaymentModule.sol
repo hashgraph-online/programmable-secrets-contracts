@@ -8,8 +8,12 @@ import {PaymentModuleEvents} from "./Events.sol";
 import {
     AlreadyHasReceipt,
     BuyerNotAllowlisted,
+    BuyerDoesNotOwnRequiredAgent,
+    BuyerUaidMismatch,
+    BuyerUaidRequired,
     DatasetInactive,
     InvalidModuleAddress,
+    InvalidPolicyType,
     InvalidPaymentToken,
     InvalidPayoutAddress,
     InvalidPrice,
@@ -21,6 +25,10 @@ import {PolicyVault} from "./PolicyVault.sol";
 import {AccessReceipt} from "./AccessReceipt.sol";
 import {UpgradeableReentrancyGuard} from "./UpgradeableReentrancyGuard.sol";
 
+interface IERC721OwnershipRegistry {
+    function ownerOf(uint256 tokenId) external view returns (address);
+}
+
 contract PaymentModule is
     Initializable,
     Ownable2StepUpgradeable,
@@ -28,6 +36,9 @@ contract PaymentModule is
     UpgradeableReentrancyGuard,
     PaymentModuleEvents
 {
+    bytes32 private constant POLICY_TYPE_TIMEBOUND = keccak256("TIMEBOUND_V1");
+    bytes32 private constant POLICY_TYPE_UAID_ERC8004 = keccak256("UAID_ERC8004_V1");
+
     PolicyVault public policyVault;
     AccessReceipt public accessReceipt;
 
@@ -56,7 +67,7 @@ contract PaymentModule is
         _setAccessReceipt(accessReceiptAddress);
     }
 
-    function purchase(uint256 policyId, address recipient)
+    function purchase(uint256 policyId, address recipient, string calldata buyerUaid)
         external
         payable
         nonReentrant
@@ -87,6 +98,7 @@ contract PaymentModule is
         if (msg.value != price) {
             revert InvalidPrice();
         }
+        _validateBuyerPolicyRequirements(policy, buyerUaid);
 
         address payout = policy.payout;
         if (payout == address(0)) {
@@ -190,5 +202,26 @@ contract PaymentModule is
         }
         accessReceipt = AccessReceipt(accessReceiptAddress);
         emit AccessReceiptUpdated(accessReceiptAddress);
+    }
+
+    function _validateBuyerPolicyRequirements(PolicyVault.Policy memory policy, string calldata buyerUaid)
+        internal
+        view
+    {
+        if (policy.policyType == POLICY_TYPE_TIMEBOUND) {
+            return;
+        }
+        if (policy.policyType != POLICY_TYPE_UAID_ERC8004) {
+            revert InvalidPolicyType();
+        }
+        if (bytes(buyerUaid).length == 0) {
+            revert BuyerUaidRequired();
+        }
+        if (keccak256(bytes(buyerUaid)) != policy.requiredBuyerUaidHash) {
+            revert BuyerUaidMismatch();
+        }
+        if (IERC721OwnershipRegistry(policy.identityRegistry).ownerOf(policy.agentId) != msg.sender) {
+            revert BuyerDoesNotOwnRequiredAgent();
+        }
     }
 }

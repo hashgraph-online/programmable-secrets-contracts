@@ -173,6 +173,11 @@
         "name": "recipient",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "buyerUaid",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [
@@ -447,7 +452,22 @@
   },
   {
     "type": "error",
+    "name": "BuyerDoesNotOwnRequiredAgent",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "BuyerNotAllowlisted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BuyerUaidMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BuyerUaidRequired",
     "inputs": []
   },
   {
@@ -494,6 +514,11 @@
   {
     "type": "error",
     "name": "InvalidPayoutAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPolicyType",
     "inputs": []
   },
   {

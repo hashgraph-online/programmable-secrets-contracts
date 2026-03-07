@@ -54,7 +54,7 @@ contract ProgrammableSecretsModularUpgradeTest is ProgrammableSecretsModularTest
         uint256 datasetId = policyVault.getPolicy(policyId).datasetId;
 
         vm.prank(BUYER);
-        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT, "");
 
         PolicyVaultV2 newPolicyVaultImplementation = new PolicyVaultV2();
         PaymentModuleV2 newPaymentModuleImplementation = new PaymentModuleV2();

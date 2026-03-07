@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Script} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {AccessReceipt} from "../src/AccessReceipt.sol";
+import {AgentIdentityRegistry} from "../src/AgentIdentityRegistry.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 
@@ -14,6 +15,7 @@ contract Deploy is Script {
             PolicyVault deployedPolicyVault,
             PaymentModule deployedPaymentModule,
             AccessReceipt deployedAccessReceipt,
+            AgentIdentityRegistry deployedAgentIdentityRegistry,
             address policyVaultImplementation,
             address paymentModuleImplementation,
             address deployer,
@@ -30,6 +32,7 @@ contract Deploy is Script {
             address(new ERC1967Proxy(policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))))
         );
         deployedAccessReceipt = new AccessReceipt(deployer);
+        deployedAgentIdentityRegistry = new AgentIdentityRegistry(deployer);
 
         paymentModuleImplementation = address(new PaymentModule());
         deployedPaymentModule = PaymentModule(
@@ -49,6 +52,7 @@ contract Deploy is Script {
             deployedPolicyVault.transferOwnership(requestedOwner);
             deployedPaymentModule.transferOwnership(requestedOwner);
             deployedAccessReceipt.transferOwnership(requestedOwner);
+            deployedAgentIdentityRegistry.transferOwnership(requestedOwner);
         }
         vm.stopBroadcast();
     }

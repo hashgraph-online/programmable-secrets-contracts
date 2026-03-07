@@ -8,6 +8,7 @@ This package is the contract source of truth for:
 - `PolicyVault`
 - `PaymentModule`
 - `AccessReceipt`
+- `AgentIdentityRegistry`
 - deployment automation
 - checked-in ABIs
 - testnet deployment manifests
@@ -19,6 +20,7 @@ This package is the contract source of truth for:
 | `PolicyVault` | Stores provider-owned datasets plus attached policy records, including dataset discovery indexes and supported policy types. |
 | `PaymentModule` | Validates purchase conditions, settles native ETH, mints the access receipt, and resolves active entitlement state for policies or datasets. |
 | `AccessReceipt` | Non-transferable ERC-721 entitlement proving a buyer satisfied a specific dataset policy. |
+| `AgentIdentityRegistry` | ERC-8004-style identity registry used to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
 
 The intended app entrypoints are:
 - dataset registration and policy creation through `PolicyVault`
@@ -44,6 +46,7 @@ Primary functions:
 - `registerDataset(bytes32 ciphertextHash, bytes32 keyCommitment, bytes32 metadataHash, bytes32 providerUaidHash)`
 - `setDatasetActive(uint256 datasetId, bool active)`
 - `createTimeboundPolicy(uint256 datasetId, address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 metadataHash, address[] allowlistAccounts)`
+- `createUaidBoundPolicy(uint256 datasetId, address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 metadataHash, bytes32 requiredBuyerUaidHash, address identityRegistry, uint256 agentId, address[] allowlistAccounts)`
 - `createPolicyForDataset(uint256 datasetId, bytes32 policyType, address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 metadataHash, address[] allowlistAccounts)`
 - `updatePolicy(uint256 policyId, uint96 newPrice, uint64 newExpiresAt, bool active, bool allowlistEnabled, bytes32 newMetadataHash)`
 - `setAllowlist(uint256 policyId, address[] accounts, bool allowed)`
@@ -68,7 +71,7 @@ Events:
 
 Primary functions:
 - `initialize(address initialOwner, address policyVaultAddress, address accessReceiptAddress)`
-- `purchase(uint256 policyId, address recipient)`
+- `purchase(uint256 policyId, address recipient, string buyerUaid)`
 - `hasAccess(uint256 policyId, address buyer)`
 - `hasDatasetAccess(uint256 datasetId, address buyer)`
 - `receiptOfPolicyAndBuyer(uint256 policyId, address buyer)`
@@ -100,11 +103,13 @@ Events:
 - Policies are explorable onchain through `datasetCount`, `policyCount`, `getDataset`, `getPolicy`, `getDatasetPolicyCount`, `getDatasetPolicyIdAt`, and `getDatasetPolicyIds`.
 - Native ETH only in the current green path. Policies with a non-zero `paymentToken` revert.
 - `POLICY_TYPE_TIMEBOUND` is the built-in supported policy type. It enforces an optional expiration timestamp and establishes the registry pattern for future policy types such as KYC or geographic proofs.
+- `POLICY_TYPE_UAID_ERC8004` is the built-in agent-gated policy type. It stores the resolved `identityRegistry`, `agentId`, and `requiredBuyerUaidHash`, then enforces ERC-8004 ownership plus an exact HCS-14 UAID hash match during purchase.
 - `PolicyVault` owns dataset and policy metadata plus provider-controlled mutability.
 - `PaymentModule` is the only contract allowed to mint receipts.
 - One buyer can hold at most one receipt per policy.
 - Receipts are non-transferable.
 - Expiry is strict: `expiresAt == block.timestamp` is expired.
+- UAID-bound purchases require the caller to pass the exact buyer UAID string.
 - `PaymentModule.hasAccess` reports active entitlement, not merely historical purchase. It returns `false` once a time-bound policy expires or a dataset is deactivated.
 - `AccessReceipt` remains the durable historical proof of purchase, while `PaymentModule.hasDatasetAccess` resolves whether any active policy on a dataset still grants access.
 - Allowlist enforcement is onchain through `PolicyVault.isAllowlisted`.

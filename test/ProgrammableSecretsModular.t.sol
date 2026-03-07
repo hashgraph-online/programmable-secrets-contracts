@@ -109,7 +109,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
         vm.recordLogs();
         vm.prank(BUYER);
-        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT, "");
         Log[] memory entries = vm.getRecordedLogs();
 
         AccessReceipt.Receipt memory receipt = accessReceipt.getReceipt(receiptTokenId);
@@ -138,7 +138,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
         vm.prank(BUYER);
         vm.expectRevert(PolicyInactive.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
     }
 
     function testPurchaseRejectsExpiredPolicy() public {
@@ -147,7 +147,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         vm.warp(block.timestamp + 2);
         vm.prank(BUYER);
         vm.expectRevert(PolicyExpired.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
     }
 
     function testPurchaseRequiresExactPrice() public {
@@ -155,7 +155,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
         vm.prank(BUYER);
         vm.expectRevert(InvalidPrice.selector);
-        paymentModule.purchase{value: 2 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 2 ether}(policyId, BUYER, "");
     }
 
     function testPurchaseRequiresAllowlistWhenEnabled() public {
@@ -163,25 +163,25 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
         vm.prank(OTHER_BUYER);
         vm.expectRevert(BuyerNotAllowlisted.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, OTHER_BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, OTHER_BUYER, "");
     }
 
     function testPurchaseRejectsSecondReceiptForSameBuyer() public {
         uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
 
         vm.prank(BUYER);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
 
         vm.prank(BUYER);
         vm.expectRevert(AlreadyHasReceipt.selector);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
     }
 
     function testReceiptIsNonTransferable() public {
         uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
 
         vm.prank(BUYER);
-        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT, "");
 
         vm.prank(BUYER);
         vm.expectRevert(ReceiptNonTransferable.selector);
@@ -193,7 +193,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
 
         vm.prank(BUYER);
-        paymentModule.purchase{value: 1 ether}(policyId, BUYER);
+        paymentModule.purchase{value: 1 ether}(policyId, BUYER, "");
 
         vm.warp(block.timestamp + 1 days + 1);
 
@@ -211,5 +211,30 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
         assertEqUint(policyVault.datasetCount(), uint256(2));
         assertEqUint(policyVault.policyCount(), uint256(2));
+    }
+
+    function testCreateUaidBoundPolicyStoresRequirementFields() public {
+        uint256 agentId = _registerBuyerAgent(BUYER, "volatility-agent");
+        uint256 policyId = _createUaidBoundPolicy(1 ether, 0, REQUIRED_BUYER_UAID, agentId);
+
+        PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
+
+        assertEqBytes32(policy.policyType, policyVault.POLICY_TYPE_UAID_ERC8004());
+        assertEqBytes32(policy.requiredBuyerUaidHash, keccak256(bytes(REQUIRED_BUYER_UAID)));
+        assertEqAddress(policy.identityRegistry, address(agentIdentityRegistry));
+        assertEqUint(policy.agentId, agentId);
+    }
+
+    function testPurchaseRequiresMatchingUaidAgentOwnership() public {
+        uint256 agentId = _registerBuyerAgent(BUYER, "volatility-agent");
+        uint256 policyId = _createUaidBoundPolicy(1 ether, 0, REQUIRED_BUYER_UAID, agentId);
+
+        vm.prank(BUYER);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, BUYER, REQUIRED_BUYER_UAID);
+
+        AccessReceipt.Receipt memory receipt = accessReceipt.getReceipt(receiptTokenId);
+        assertEqUint(receipt.policyId, policyId);
+        assertEqAddress(receipt.buyer, BUYER);
+        assertEqBool(paymentModule.hasAccess(policyId, BUYER), true);
     }
 }
