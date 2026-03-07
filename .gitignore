@@ -5,3 +5,6 @@ broadcast/
 gas-report.txt
 results.sarif
 .DS_Store
+.env*
+node_modules/
+*.tgz

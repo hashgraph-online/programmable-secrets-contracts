@@ -1,5 +1,11 @@
 # Programmable Secrets Contracts
 
+Install-free operator CLI on npm:
+
+```bash
+npx programmable-secret help
+```
+
 Programmable Secrets is a receipt-backed entitlement protocol for finance-agent workflows.
 Providers commit encrypted market data, issuer materials, research, or private tool access onchain.
 Buyers satisfy an onchain policy, mint a non-transferable access receipt, and then request the buyer-bound key envelope from the offchain key release service.
@@ -34,7 +40,7 @@ The intended app entrypoints are:
 | Robinhood Chain Testnet | `46630` | `https://rpc.testnet.chain.robinhood.com/rpc` | `https://explorer.testnet.chain.robinhood.com` |
 | Arbitrum Sepolia | `421614` | `https://sepolia-rollup.arbitrum.io/rpc` | `https://sepolia.arbiscan.io` |
 
-Robinhood testnet is the primary demo target.
+Robinhood testnet is the primary operator target.
 Arbitrum Sepolia is maintained as a secondary testnet deployment target.
 
 ## Current Deployments
@@ -160,11 +166,41 @@ forge inspect --json PaymentModule abi > abis/PaymentModule.abi.json
 forge inspect --json PolicyVault abi > abis/PolicyVault.abi.json
 ```
 
-## CLI Demos
+## CLI Workflows
 
-The contracts repo includes two live CLI proofs in `script/manage-policies.mjs`:
-- `demo:uaid-flow` runs the direct onchain ERC-8004 path
-- `demo:broker-uaid-flow` registers through the local Registry Broker with `RegistryBrokerClient`, then proves the same UAID-gated purchase flow against the selected live IdentityRegistry
+The contracts repo includes two live CLI workflows in `script/manage-policies.mjs`:
+- `flow:direct` runs the direct onchain ERC-8004 path
+- `flow:broker` registers through the local Registry Broker with `RegistryBrokerClient`, then proves the same UAID-gated purchase flow against the selected live `IdentityRegistry`
+
+The package also exposes a first-class binary:
+
+```bash
+programmable-secret <command>
+```
+
+Compatibility alias:
+
+```bash
+programmable-secrets <command>
+```
+
+Inside this repo, the equivalent local wrapper is:
+
+```bash
+pnpm run cli -- <command>
+```
+
+Primary install-free entrypoint from npm:
+
+```bash
+npx programmable-secret help
+```
+
+Release automation:
+
+- GitHub release tags must match the package version, for example `v0.1.0`
+- `.github/workflows/publish-cli.yml` validates the package, smoke-tests the tarball, and publishes to npm with provenance
+- manual dry-runs are available through the `Publish CLI Package` workflow dispatch
 
 Install the single Node dependency:
 
@@ -186,12 +222,34 @@ Show the available commands:
 
 ```bash
 pnpm run help
+npx programmable-secret help
 ```
 
-Run the original direct flow:
+Start with the guided entrypoint:
 
 ```bash
-pnpm run demo:uaid-flow
+programmable-secret start
+```
+
+Check readiness before a live run:
+
+```bash
+programmable-secret doctor
+```
+
+If wallet or broker keys are missing, bootstrap a local env file from the running Docker broker:
+
+```bash
+programmable-secret env-bootstrap
+```
+
+This writes `.env.local` when it does not already exist and pulls common workflow keys from `registry-broker-registry-broker-1` when available.
+Set `PROGRAMMABLE_SECRETS_ENV_OUTPUT_PATH` if you want to generate a different file.
+
+Run the direct identity flow:
+
+```bash
+programmable-secret flow:direct
 ```
 
 What the direct flow does on the selected live ERC-8004 network:
@@ -202,14 +260,14 @@ What the direct flow does on the selected live ERC-8004 network:
 5. reads back the minted `AccessReceipt`
 6. decrypts the locally prepared payload to prove the unlock path completed
 
-Run the separate broker-backed flow:
+Run the Registry Broker-backed flow:
 
 ```bash
-pnpm run demo:broker-uaid-flow
+programmable-secret flow:broker
 ```
 
 What the broker-backed flow does:
-1. starts a local demo agent with the `standards-sdk`
+1. starts a local agent endpoint with the `standards-sdk`
 2. registers that agent in the local Registry Broker with `RegistryBrokerClient`
 3. links the agent into the selected live ERC-8004 registry and receives a real UAID
 4. registers a dataset in `PolicyVault`
@@ -217,20 +275,61 @@ What the broker-backed flow does:
 6. purchases the policy, reads back the minted `AccessReceipt`, and decrypts the prepared payload
 
 Optional overrides:
-- `DEMO_ERC8004_NETWORK`
-- `DEMO_AGENT_URI`
-- `DEMO_BUYER_UAID`
-- `DEMO_PROVIDER_UAID`
-- `DEMO_PRICE_WEI`
-- `DEMO_EXPIRES_AT_UNIX`
+- `PROGRAMMABLE_SECRETS_NETWORK`
+- `PROGRAMMABLE_SECRETS_AGENT_URI`
+- `PROGRAMMABLE_SECRETS_BUYER_UAID`
+- `PROGRAMMABLE_SECRETS_PROVIDER_UAID`
+- `PROGRAMMABLE_SECRETS_PRICE_WEI`
+- `PROGRAMMABLE_SECRETS_EXPIRES_AT_UNIX`
 - `REGISTRY_BROKER_BASE_URL`
 - `REGISTRY_BROKER_API_KEY`
 - `REGISTRY_BROKER_ACCOUNT_ID`
 - `REGISTRY_BROKER_ERC8004_NETWORK`
 
-By default both demos use Robinhood Testnet. Set `DEMO_ERC8004_NETWORK=arbitrum-sepolia` if you want the original Arbitrum Sepolia path.
+By default both workflows use Robinhood testnet. Set `PROGRAMMABLE_SECRETS_NETWORK=arbitrum-sepolia` if you want the Arbitrum Sepolia path.
 
 If you want to point at a different env file, set `PROGRAMMABLE_SECRETS_ENV_PATH` before running the command.
+
+## Contract Commands
+
+The CLI now covers the full operator surface around the deployed contracts.
+
+Read-only commands:
+
+```bash
+programmable-secret contracts
+programmable-secret datasets list
+programmable-secret datasets get --dataset-id 1
+programmable-secret policies list
+programmable-secret policies get --policy-id 1
+programmable-secret access policy --policy-id 1 --buyer 0x...
+programmable-secret access dataset --dataset-id 1 --buyer 0x...
+programmable-secret receipts get --receipt-id 1
+```
+
+Write commands:
+
+```bash
+programmable-secret identity register --agent-uri https://hol.org/agents/volatility-trading-agent-custodian
+programmable-secret datasets register --provider-uaid "did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab" --metadata-json '{"title":"TSLA feed"}' --ciphertext "encrypted payload" --key-material "wrapped key"
+programmable-secret datasets set-active --dataset-id 1 --active false
+programmable-secret policies create-timebound --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --metadata-json '{"title":"24 hour access"}'
+programmable-secret policies create-uaid --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --required-buyer-uaid uaid:aid:... --agent-id 97
+programmable-secret policies update --policy-id 1 --price-eth 0.00002 --active true --metadata-json '{"title":"Updated access"}'
+programmable-secret policies allowlist --policy-id 1 --accounts 0xabc,0xdef --allowed true
+programmable-secret purchase --policy-id 1
+```
+
+The CLI accepts either direct hashes or operator-friendly raw inputs for dataset registration:
+- `--ciphertext-hash` or `--ciphertext`
+- `--key-commitment` or `--key-material`
+- `--metadata-hash`, `--metadata-json`, `--metadata-file`, or `--metadata`
+- `--provider-uaid-hash` or `--provider-uaid`
+
+Wallet selection:
+- provider-facing write commands default to `ETH_PK_2`
+- agent-facing commands default to `ETH_PK`
+- override with `--wallet provider` or `--wallet agent`
 
 ## Deployment
 

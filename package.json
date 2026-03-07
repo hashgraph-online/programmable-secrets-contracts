@@ -1,0 +1,60 @@
+{
+  "name": "programmable-secret",
+  "version": "0.1.0",
+  "description": "Operator CLI for dataset-backed programmable access policies on Robinhood Chain and Arbitrum Sepolia.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "homepage": "https://github.com/hashgraph-online/programmable-secrets-contracts#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hashgraph-online/programmable-secrets-contracts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hashgraph-online/programmable-secrets-contracts/issues"
+  },
+  "keywords": [
+    "arbitrum",
+    "cli",
+    "erc-8004",
+    "finance-agents",
+    "policy-vault",
+    "programmable-secrets",
+    "robinhood-chain",
+    "uaid"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "programmable-secret": "./script/manage-policies.mjs",
+    "programmable-secrets": "./script/manage-policies.mjs"
+  },
+  "files": [
+    ".env.example",
+    "README.md",
+    "abis",
+    "deployments",
+    "script/manage-policies.mjs"
+  ],
+  "scripts": {
+    "cli": "node --import tsx script/manage-policies.mjs",
+    "help": "node --import tsx script/manage-policies.mjs help",
+    "start": "node --import tsx script/manage-policies.mjs start",
+    "doctor": "node --import tsx script/manage-policies.mjs doctor",
+    "env:bootstrap": "node --import tsx script/manage-policies.mjs env-bootstrap",
+    "flow:direct": "node --import tsx script/manage-policies.mjs flow:direct",
+    "flow:broker": "node --import tsx script/manage-policies.mjs flow:broker",
+    "policies:list": "node --import tsx script/manage-policies.mjs list",
+    "policies:deactivate-all": "node --import tsx script/manage-policies.mjs deactivate-all",
+    "policies:update-prices": "node --import tsx script/manage-policies.mjs update-prices"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "tsx": "^4.20.6",
+    "viem": "^2.39.3"
+  }
+}
