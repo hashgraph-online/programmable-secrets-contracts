@@ -1,6 +1,6 @@
 # Programmable Secrets Contracts
 
-This project contains the Arbitrum contract for the Programmable Secrets POC.
+This project contains the EVM contract for the Programmable Secrets POC.
 
 ## Layout
 
@@ -10,7 +10,7 @@ This project contains the Arbitrum contract for the Programmable Secrets POC.
 - `script/Deploy.s.sol`: deployment script
 - `script/Verify.s.sol`: verification helper placeholder
 - `test/ProgrammableSecrets.t.sol`: unit and fuzz tests
-- `deployments/arbitrum-sepolia.json`: canonical checked-in deployment artifact
+- `deployments/*.json`: canonical checked-in deployment artifacts per network
 
 ## Requirements
 
@@ -38,9 +38,20 @@ forge script script/Deploy.s.sol:Deploy \
   -vvv
 ```
 
+## Deploy to Robinhood Chain Testnet
+
+```bash
+cd programmable-secrets-contracts
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url "https://rpc.testnet.chain.robinhood.com/rpc" \
+  --private-key "$DEPLOYER_PRIVATE_KEY" \
+  --broadcast \
+  -vvv
+```
+
 ## GitHub automation
 
-The repository ships with GitHub Actions for CI, security scanning, and manual Sepolia deployment:
+The repository ships with GitHub Actions for CI, security scanning, and manual EVM testnet deployment:
 
 - `.github/workflows/ci.yml`
   Runs `forge fmt --check`, `forge lint`, `forge build --sizes`, `forge test -vvv`, and a gas report on every push to `main` and every pull request.
@@ -48,15 +59,16 @@ The repository ships with GitHub Actions for CI, security scanning, and manual S
   Runs Slither, uploads a SARIF artifact on every run, attempts GitHub code scanning upload when the repository supports it, and fails on any low-or-higher severity finding after excluding the two intentional patterns in this contract:
   `timestamp` for offer expiry and `low-level-calls` for guarded native-ETH payout.
 - `.github/workflows/deploy-arbitrum-sepolia.yml`
-  Provides a manual `workflow_dispatch` deployment path for Arbitrum Sepolia, writes the canonical deployment artifact, verifies on Sourcify, and attempts Arbiscan verification when an API key is configured.
+  Provides a manual `workflow_dispatch` deployment path for both Arbitrum Sepolia and Robinhood Chain Testnet, writes the canonical deployment artifact for the selected network, verifies on Sourcify for Arbitrum Sepolia, and performs native explorer verification through Arbiscan or Robinhood's Blockscout explorer as appropriate.
 - `.github/dependabot.yml`
   Keeps GitHub Actions dependencies updated weekly.
 
 ### Required GitHub secrets
 
-For the `arbitrum-sepolia` deployment environment:
+For the existing `arbitrum-sepolia` deployment environment, which currently stores the shared deployer key plus RPC URLs for the supported testnets:
 
 - `ARBITRUM_SEPOLIA_RPC_URL`
+- `ROBINHOOD_TESTNET_RPC_URL`
 - `DEPLOYER_PRIVATE_KEY`
 
 Optional deploy-time verification secrets:
@@ -68,8 +80,7 @@ Compatibility fallback:
 
 - `ETH_PK`
 
-The deploy workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK` for compatibility with the existing local script.
-Either secret may be stored with or without a leading `0x`; the workflow normalizes the key before running Foundry.
+The deploy workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK` for compatibility with the existing local script. Either secret may be stored with or without a leading `0x`; the workflow normalizes the key before running Foundry.
 
 Optional repository variable for native GitHub code scanning on private repos:
 
@@ -79,9 +90,10 @@ Leave that variable unset for private repos without GitHub Advanced Security. In
 
 ## Canonical deployment artifact
 
-The checked-in deployment artifact path is:
+The checked-in deployment artifact paths are:
 
 - `deployments/arbitrum-sepolia.json`
+- `deployments/robinhood-testnet.json`
 
 Required fields:
 
@@ -95,7 +107,7 @@ Required fields:
 - `abiChecksum`
 - `gitCommit`
 
-Update that file immediately after any successful Sepolia deployment.
+Update the relevant file immediately after any successful deployment.
 
 ## Current measured gas
 

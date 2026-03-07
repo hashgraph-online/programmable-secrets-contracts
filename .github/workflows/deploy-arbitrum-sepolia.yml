@@ -1,10 +1,18 @@
-name: Deploy Arbitrum Sepolia
+name: Deploy EVM Testnet
 
 on:
   workflow_dispatch:
     inputs:
-      verify_arbiscan:
-        description: Attempt Arbiscan verification when an API key is configured
+      network:
+        description: Network to deploy
+        required: true
+        default: robinhood-testnet
+        type: choice
+        options:
+          - arbitrum-sepolia
+          - robinhood-testnet
+      verify_native_explorer:
+        description: Attempt native explorer verification for the selected network
         required: false
         default: true
         type: boolean
@@ -13,7 +21,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: deploy-arbitrum-sepolia
+  group: deploy-${{ inputs.network }}
   cancel-in-progress: false
 
 jobs:
@@ -22,14 +30,11 @@ jobs:
     timeout-minutes: 20
     environment: arbitrum-sepolia
     env:
-      CHAIN_ID: "421614"
-      NETWORK_NAME: arbitrum-sepolia
       CONTRACT_PATH: src/ProgrammableSecrets.sol:ProgrammableSecrets
       COMPILER_VERSION: v0.8.24+commit.e11b9ed9
       OPTIMIZER_RUNS: "200"
-      DEPLOYMENT_FILE: deployments/arbitrum-sepolia.json
-      BROADCAST_FILE: broadcast/Deploy.s.sol/421614/run-latest.json
       ARBITRUM_SEPOLIA_RPC_URL: ${{ secrets.ARBITRUM_SEPOLIA_RPC_URL }}
+      ROBINHOOD_TESTNET_RPC_URL: ${{ secrets.ROBINHOOD_TESTNET_RPC_URL }}
       DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
       ETH_PK: ${{ secrets.ETH_PK }}
       ARBISCAN_API_KEY: ${{ secrets.ARBISCAN_API_KEY }}
@@ -43,10 +48,61 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Resolve deployment target
+        id: target
+        run: |
+          case "${{ inputs.network }}" in
+            arbitrum-sepolia)
+              echo "CHAIN_ID=421614" >> "$GITHUB_ENV"
+              echo "NETWORK_NAME=arbitrum-sepolia" >> "$GITHUB_ENV"
+              echo "DEPLOYMENT_FILE=deployments/arbitrum-sepolia.json" >> "$GITHUB_ENV"
+              echo "BROADCAST_FILE=broadcast/Deploy.s.sol/421614/run-latest.json" >> "$GITHUB_ENV"
+              echo "RPC_URL=$ARBITRUM_SEPOLIA_RPC_URL" >> "$GITHUB_ENV"
+              echo "EXPLORER_LABEL=Arbiscan" >> "$GITHUB_ENV"
+              echo "EXPLORER_ADDRESS_URL=https://sepolia.arbiscan.io/address" >> "$GITHUB_ENV"
+              echo "EXPLORER_TX_URL=https://sepolia.arbiscan.io/tx" >> "$GITHUB_ENV"
+              echo "SOURCIFY_REPO_URL=https://repo.sourcify.dev/421614" >> "$GITHUB_ENV"
+              echo "ENABLE_SOURCIFY=true" >> "$GITHUB_ENV"
+              echo "NATIVE_VERIFIER=etherscan" >> "$GITHUB_ENV"
+              {
+                echo "chain_id=421614"
+                echo "network_name=arbitrum-sepolia"
+                echo "deployment_file=deployments/arbitrum-sepolia.json"
+                echo "broadcast_file=broadcast/Deploy.s.sol/421614/run-latest.json"
+                echo "enable_sourcify=true"
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            robinhood-testnet)
+              echo "CHAIN_ID=46630" >> "$GITHUB_ENV"
+              echo "NETWORK_NAME=robinhood-testnet" >> "$GITHUB_ENV"
+              echo "DEPLOYMENT_FILE=deployments/robinhood-testnet.json" >> "$GITHUB_ENV"
+              echo "BROADCAST_FILE=broadcast/Deploy.s.sol/46630/run-latest.json" >> "$GITHUB_ENV"
+              echo "RPC_URL=$ROBINHOOD_TESTNET_RPC_URL" >> "$GITHUB_ENV"
+              echo "EXPLORER_LABEL=Robinhood Explorer" >> "$GITHUB_ENV"
+              echo "EXPLORER_ADDRESS_URL=https://explorer.testnet.chain.robinhood.com/address" >> "$GITHUB_ENV"
+              echo "EXPLORER_TX_URL=https://explorer.testnet.chain.robinhood.com/tx" >> "$GITHUB_ENV"
+              echo "SOURCIFY_REPO_URL=" >> "$GITHUB_ENV"
+              echo "ENABLE_SOURCIFY=false" >> "$GITHUB_ENV"
+              echo "NATIVE_VERIFIER=blockscout" >> "$GITHUB_ENV"
+              echo "BLOCKSCOUT_VERIFIER_URL=https://explorer.testnet.chain.robinhood.com/api/" >> "$GITHUB_ENV"
+              {
+                echo "chain_id=46630"
+                echo "network_name=robinhood-testnet"
+                echo "deployment_file=deployments/robinhood-testnet.json"
+                echo "broadcast_file=broadcast/Deploy.s.sol/46630/run-latest.json"
+                echo "enable_sourcify=false"
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported network: ${{ inputs.network }}" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Validate deploy inputs
         run: |
-          if [ -z "$ARBITRUM_SEPOLIA_RPC_URL" ]; then
-            echo "Missing ARBITRUM_SEPOLIA_RPC_URL secret" >&2
+          if [ -z "$RPC_URL" ]; then
+            echo "Missing RPC_URL for $NETWORK_NAME" >&2
             exit 1
           fi
           if [ -z "$DEPLOYER_PRIVATE_KEY" ] && [ -z "$ETH_PK" ]; then
@@ -61,7 +117,7 @@ jobs:
             0x*) export ETH_PK="$deployer_key" ;;
             *) export ETH_PK="0x$deployer_key" ;;
           esac
-          forge script script/Deploy.s.sol:Deploy --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL" --broadcast -vvv
+          forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast -vvv
 
       - name: Capture deployment artifact
         id: deployment
@@ -103,6 +159,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify on Sourcify
+        if: ${{ steps.target.outputs.enable_sourcify == 'true' }}
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
@@ -113,22 +170,42 @@ jobs:
           "${{ steps.deployment.outputs.contract_address }}"
           "$CONTRACT_PATH"
 
-      - name: Verify on Arbiscan
-        if: ${{ inputs.verify_arbiscan }}
+      - name: Verify on native explorer
+        if: ${{ inputs.verify_native_explorer }}
         run: |
-          api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
-          if [ -z "$api_key" ]; then
-            echo "Skipping Arbiscan verification because no API key is configured."
-            exit 0
-          fi
-          forge verify-contract \
-            --chain-id "$CHAIN_ID" \
-            --watch \
-            --compiler-version "$COMPILER_VERSION" \
-            --num-of-optimizations "$OPTIMIZER_RUNS" \
-            --etherscan-api-key "$api_key" \
-            "${{ steps.deployment.outputs.contract_address }}" \
-            "$CONTRACT_PATH"
+          case "$NATIVE_VERIFIER" in
+            etherscan)
+              api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
+              if [ -z "$api_key" ]; then
+                echo "Skipping Arbiscan verification because no API key is configured."
+                exit 0
+              fi
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --etherscan-api-key "$api_key" \
+                "${{ steps.deployment.outputs.contract_address }}" \
+                "$CONTRACT_PATH"
+              ;;
+            blockscout)
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --rpc-url "$RPC_URL" \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --verifier blockscout \
+                --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
+                "${{ steps.deployment.outputs.contract_address }}" \
+                "$CONTRACT_PATH"
+              ;;
+            *)
+              echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Commit deployment artifact
         run: |
@@ -139,25 +216,28 @@ jobs:
             echo "No deployment artifact changes to commit."
             exit 0
           fi
-          git commit -m "chore: update arbitrum sepolia deployment artifact"
+          git commit -m "chore: update $NETWORK_NAME deployment artifact"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Upload deployment artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: arbitrum-sepolia-deployment
+          name: ${{ steps.target.outputs.network_name }}-deployment
           path: |
-            deployments/arbitrum-sepolia.json
-            broadcast/Deploy.s.sol/421614/run-latest.json
+            ${{ steps.target.outputs.deployment_file }}
+            ${{ steps.target.outputs.broadcast_file }}
 
       - name: Publish workflow summary
         run: |
           {
-            echo "## Arbitrum Sepolia deployment"
+            echo "## $NETWORK_NAME deployment"
             echo
             echo "- Contract: \`${{ steps.deployment.outputs.contract_address }}\`"
             echo "- Transaction: \`${{ steps.deployment.outputs.transaction_hash }}\`"
             echo "- Block: \`${{ steps.deployment.outputs.block_number }}\`"
-            echo "- Sourcify: https://repo.sourcify.dev/421614/${{ steps.deployment.outputs.contract_address }}"
-            echo "- Arbiscan: https://sepolia.arbiscan.io/address/${{ steps.deployment.outputs.contract_address }}"
+            if [ "$ENABLE_SOURCIFY" = "true" ]; then
+              echo "- Sourcify: $SOURCIFY_REPO_URL/${{ steps.deployment.outputs.contract_address }}"
+            fi
+            echo "- $EXPLORER_LABEL: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.contract_address }}"
+            echo "- Explorer tx: $EXPLORER_TX_URL/${{ steps.deployment.outputs.transaction_hash }}"
           } >> "$GITHUB_STEP_SUMMARY"
