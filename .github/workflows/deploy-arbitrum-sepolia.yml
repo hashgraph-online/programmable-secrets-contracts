@@ -30,7 +30,8 @@ jobs:
     timeout-minutes: 20
     environment: arbitrum-sepolia
     env:
-      CONTRACT_PATH: src/ProgrammableSecrets.sol:ProgrammableSecrets
+      IMPLEMENTATION_CONTRACT_PATH: src/ProgrammableSecrets.sol:ProgrammableSecrets
+      PROXY_CONTRACT_PATH: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy"
       COMPILER_VERSION: v0.8.24+commit.e11b9ed9
       OPTIMIZER_RUNS: "200"
       ARBITRUM_SEPOLIA_RPC_URL: ${{ secrets.ARBITRUM_SEPOLIA_RPC_URL }}
@@ -110,24 +111,33 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy contract
+      - name: Normalize deployer key and owner
         run: |
           deployer_key="${DEPLOYER_PRIVATE_KEY:-$ETH_PK}"
           case "$deployer_key" in
             0x*) export ETH_PK="$deployer_key" ;;
             *) export ETH_PK="0x$deployer_key" ;;
           esac
+          contract_owner="$(cast wallet address --private-key "$ETH_PK")"
+          echo "ETH_PK=$ETH_PK" >> "$GITHUB_ENV"
+          echo "CONTRACT_OWNER=$contract_owner" >> "$GITHUB_ENV"
+
+      - name: Deploy contract
+        run: |
           forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast -vvv
 
       - name: Capture deployment artifact
         id: deployment
         run: |
-          contract_address="$(jq -r '.transactions[] | select(.contractName == "ProgrammableSecrets") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
-          deployer_address="$(jq -r '.transactions[] | select(.contractName == "ProgrammableSecrets") | .transaction.from' "$BROADCAST_FILE" | tail -n1)"
+          contract_address="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
+          implementation_address="$(jq -r '.transactions[] | select(.contractName == "ProgrammableSecrets") | .contractAddress' "$BROADCAST_FILE" | tail -n1)"
+          deployer_address="$(jq -r '.transactions[] | select(.contractName == "ERC1967Proxy") | .transaction.from' "$BROADCAST_FILE" | tail -n1)"
           transaction_hash="$(jq -r '.receipts[] | .transactionHash' "$BROADCAST_FILE" | tail -n1)"
           block_number_hex="$(jq -r '.receipts[] | .blockNumber' "$BROADCAST_FILE" | tail -n1)"
           contract_address="$(cast to-check-sum-address "$contract_address")"
+          implementation_address="$(cast to-check-sum-address "$implementation_address")"
           deployer_address="$(cast to-check-sum-address "$deployer_address")"
+          contract_owner="$(cast to-check-sum-address "$CONTRACT_OWNER")"
           block_number="$(cast to-dec "$block_number_hex")"
           abi_checksum="$(shasum -a 256 abis/ProgrammableSecrets.abi.json | awk '{print $1}')"
           deployed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -135,6 +145,10 @@ jobs:
             --argjson chainId "$CHAIN_ID" \
             --arg network "$NETWORK_NAME" \
             --arg contractAddress "$contract_address" \
+            --arg proxyAddress "$contract_address" \
+            --arg implementationAddress "$implementation_address" \
+            --arg upgradeOwner "$contract_owner" \
+            --arg proxyKind "uups-erc1967" \
             --arg deployer "$deployer_address" \
             --argjson blockNumber "$block_number" \
             --arg transactionHash "$transaction_hash" \
@@ -145,6 +159,10 @@ jobs:
               chainId: $chainId,
               network: $network,
               contractAddress: $contractAddress,
+              proxyAddress: $proxyAddress,
+              implementationAddress: $implementationAddress,
+              upgradeOwner: $upgradeOwner,
+              proxyKind: $proxyKind,
               deployer: $deployer,
               blockNumber: $blockNumber,
               transactionHash: $transactionHash,
@@ -154,11 +172,13 @@ jobs:
             }' > "$DEPLOYMENT_FILE"
           {
             echo "contract_address=$contract_address"
+            echo "implementation_address=$implementation_address"
+            echo "upgrade_owner=$contract_owner"
             echo "transaction_hash=$transaction_hash"
             echo "block_number=$block_number"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Verify on Sourcify
+      - name: Verify implementation on Sourcify
         if: ${{ steps.target.outputs.enable_sourcify == 'true' }}
         run: >
           forge verify-contract
@@ -167,10 +187,10 @@ jobs:
           --verifier sourcify
           --compiler-version "$COMPILER_VERSION"
           --num-of-optimizations "$OPTIMIZER_RUNS"
-          "${{ steps.deployment.outputs.contract_address }}"
-          "$CONTRACT_PATH"
+          "${{ steps.deployment.outputs.implementation_address }}"
+          "$IMPLEMENTATION_CONTRACT_PATH"
 
-      - name: Verify on native explorer
+      - name: Verify implementation on native explorer
         if: ${{ inputs.verify_native_explorer }}
         run: |
           case "$NATIVE_VERIFIER" in
@@ -186,8 +206,8 @@ jobs:
                 --compiler-version "$COMPILER_VERSION" \
                 --num-of-optimizations "$OPTIMIZER_RUNS" \
                 --etherscan-api-key "$api_key" \
-                "${{ steps.deployment.outputs.contract_address }}" \
-                "$CONTRACT_PATH"
+                "${{ steps.deployment.outputs.implementation_address }}" \
+                "$IMPLEMENTATION_CONTRACT_PATH"
               ;;
             blockscout)
               forge verify-contract \
@@ -198,8 +218,49 @@ jobs:
                 --num-of-optimizations "$OPTIMIZER_RUNS" \
                 --verifier blockscout \
                 --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
+                "${{ steps.deployment.outputs.implementation_address }}" \
+                "$IMPLEMENTATION_CONTRACT_PATH"
+              ;;
+            *)
+              echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify proxy on native explorer
+        if: ${{ inputs.verify_native_explorer }}
+        run: |
+          initializer_calldata="$(cast calldata "initialize(address)" "${{ steps.deployment.outputs.upgrade_owner }}")"
+          constructor_args="$(cast abi-encode "constructor(address,bytes)" "${{ steps.deployment.outputs.implementation_address }}" "$initializer_calldata")"
+          case "$NATIVE_VERIFIER" in
+            etherscan)
+              api_key="${ARBISCAN_API_KEY:-$ETHERSCAN_API_KEY}"
+              if [ -z "$api_key" ]; then
+                echo "Skipping Arbiscan proxy verification because no API key is configured."
+                exit 0
+              fi
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --constructor-args "$constructor_args" \
+                --etherscan-api-key "$api_key" \
                 "${{ steps.deployment.outputs.contract_address }}" \
-                "$CONTRACT_PATH"
+                "$PROXY_CONTRACT_PATH"
+              ;;
+            blockscout)
+              forge verify-contract \
+                --chain-id "$CHAIN_ID" \
+                --watch \
+                --rpc-url "$RPC_URL" \
+                --compiler-version "$COMPILER_VERSION" \
+                --num-of-optimizations "$OPTIMIZER_RUNS" \
+                --constructor-args "$constructor_args" \
+                --verifier blockscout \
+                --verifier-url "$BLOCKSCOUT_VERIFIER_URL" \
+                "${{ steps.deployment.outputs.contract_address }}" \
+                "$PROXY_CONTRACT_PATH"
               ;;
             *)
               echo "Unsupported native verifier: $NATIVE_VERIFIER" >&2
@@ -232,12 +293,15 @@ jobs:
           {
             echo "## $NETWORK_NAME deployment"
             echo
-            echo "- Contract: \`${{ steps.deployment.outputs.contract_address }}\`"
+            echo "- Proxy: \`${{ steps.deployment.outputs.contract_address }}\`"
+            echo "- Implementation: \`${{ steps.deployment.outputs.implementation_address }}\`"
+            echo "- Upgrade owner: \`${{ steps.deployment.outputs.upgrade_owner }}\`"
             echo "- Transaction: \`${{ steps.deployment.outputs.transaction_hash }}\`"
             echo "- Block: \`${{ steps.deployment.outputs.block_number }}\`"
             if [ "$ENABLE_SOURCIFY" = "true" ]; then
-              echo "- Sourcify: $SOURCIFY_REPO_URL/${{ steps.deployment.outputs.contract_address }}"
+              echo "- Sourcify implementation: $SOURCIFY_REPO_URL/${{ steps.deployment.outputs.implementation_address }}"
             fi
-            echo "- $EXPLORER_LABEL: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.contract_address }}"
+            echo "- $EXPLORER_LABEL proxy: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.contract_address }}"
+            echo "- $EXPLORER_LABEL implementation: $EXPLORER_ADDRESS_URL/${{ steps.deployment.outputs.implementation_address }}"
             echo "- Explorer tx: $EXPLORER_TX_URL/${{ steps.deployment.outputs.transaction_hash }}"
           } >> "$GITHUB_STEP_SUMMARY"

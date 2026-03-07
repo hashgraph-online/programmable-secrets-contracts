@@ -1,6 +1,7 @@
 # Programmable Secrets Contracts
 
 `ProgrammableSecrets` is the EVM settlement contract for the Programmable Secrets POC.
+The current source tree is built for UUPS upgrades behind an ERC1967 proxy.
 It lets a provider publish a priced encrypted payload reference, and lets a buyer purchase one-time access with native ETH.
 
 This repository is the source of truth for:
@@ -11,9 +12,10 @@ This repository is the source of truth for:
 
 ## Live Contracts
 
-These two live testnet deployments currently expose the same verified bytecode and ABI checksum `77090895059bc200089ebc6ef3314af06c32131c9d1bed50961230af429860c3`.
+These are the current published testnet addresses for staging and integration work.
+This repository's deployment source targets `ProgrammableSecrets` behind an `ERC1967Proxy`, and deployment artifacts from this branch record both proxy and implementation addresses.
 
-| Network | Chain ID | Contract | Deploy Tx | Deployed At (UTC) | Verification | Artifact |
+| Network | Chain ID | Current Address | Deploy Tx | Deployed At (UTC) | Verification | Artifact |
 | --- | ---: | --- | --- | --- | --- | --- |
 | Arbitrum Sepolia | `421614` | [`0x0eA271390F1e275Bde02BC1087691461497B6650`](https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code) | [`0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050`](https://sepolia.arbiscan.io/tx/0x790ecd369855e79619b3351b58d85fb73d9a01ac77762e51c7a36fd61eb24050) | `2026-03-06T23:52:15Z` | [Arbiscan](https://sepolia.arbiscan.io/address/0x0eA271390F1e275Bde02BC1087691461497B6650#code), [Sourcify](https://repo.sourcify.dev/421614/0x0eA271390F1e275Bde02BC1087691461497B6650) | [`deployments/arbitrum-sepolia.json`](./deployments/arbitrum-sepolia.json) |
 | Robinhood Chain Testnet | `46630` | [`0x0C04e50660332dB8Fda62f92c07eA725D0D66e80`](https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract) | [`0x9c473e43569da767a13bf16922205222de92c727f5bc541fe19d038d4753ed5e`](https://explorer.testnet.chain.robinhood.com/tx/0x9c473e43569da767a13bf16922205222de92c727f5bc541fe19d038d4753ed5e) | `2026-03-07T01:49:25Z` | [Robinhood Blockscout exact match](https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract) | [`deployments/robinhood-testnet.json`](./deployments/robinhood-testnet.json) |
@@ -28,10 +30,27 @@ These two live testnet deployments currently expose the same verified bytecode a
 Use Arbitrum Sepolia when you want compatibility with the existing portal and broker walkthrough.
 Use Robinhood Chain Testnet when you want the Robinhood-hosted L2 environment and Blockscout-native verification flow.
 
+## Upgradeable Architecture
+
+The current source is intended to be deployed as:
+
+1. a `ProgrammableSecrets` implementation
+2. an `ERC1967Proxy`
+3. an initializer call `initialize(address initialOwner)` executed during proxy construction
+
+Operational rules:
+
+- point every backend, frontend, or script integration at the proxy address
+- treat the implementation address as deployment metadata, not as the user-facing contract
+- use the proxy owner only for upgrades and ownership transfer, not for offer lifecycle operations
+- rely on the two-step ownership flow for upgrade authority handoff
+- record the proxy and implementation addresses separately in every deployment artifact
+
 ## Contract Surface
 
 The deployed contract in [`src/ProgrammableSecrets.sol`](./src/ProgrammableSecrets.sol) has a deliberately small surface area:
 
+- `initialize(address initialOwner)`
 - `createOffer(address payout, address paymentToken, uint96 price, uint64 expiresAt, bytes32 ciphertextHash, bytes32 keyCommitment, bytes32 metadataHash, bytes32 providerUaidHash) returns (uint256 offerId)`
 - `updateOffer(uint256 offerId, uint96 newPrice, uint64 newExpiresAt, bool active, bytes32 newMetadataHash)`
 - `getOffer(uint256 offerId) returns (Offer)`
@@ -40,6 +59,11 @@ The deployed contract in [`src/ProgrammableSecrets.sol`](./src/ProgrammableSecre
 - `purchasedTimestamp(uint256 offerId, address user) returns (uint64)`
 - `offerCount() returns (uint256)`
 - `purchasedAt(uint256 offerId, address buyer) returns (uint64)`
+- `owner() returns (address)`
+- `pendingOwner() returns (address)`
+- `transferOwnership(address newOwner)`
+- `acceptOwnership()`
+- `upgradeToAndCall(address newImplementation, bytes data)`
 
 ### Offer Struct
 
@@ -65,6 +89,8 @@ struct Offer {
 
 These behaviors matter for every integration:
 
+- Upgradeable deployments are proxy-based. The proxy address is the application-facing contract address.
+- `initialize()` is for proxy bootstrap only and reverts on subsequent calls.
 - Native ETH only. `paymentToken` must be `address(0)` today. Any non-zero token address reverts with `InvalidPaymentToken()`.
 - Exact payment only. `purchase()` reverts unless `msg.value == offer.price`.
 - Strict future expiry. `expiresAt` must be `0` or strictly greater than the current block timestamp at create and update time.
@@ -74,7 +100,7 @@ These behaviors matter for every integration:
 - One purchase per buyer per offer. A second purchase from the same wallet reverts with `AlreadyPurchased()`.
 - Payout is push-based. ETH is forwarded to `payout` during `purchase()`. If the payout address rejects ETH, the full purchase reverts with `PaymentFailed()`.
 - Reentrancy is guarded. Native payout forwarding is wrapped by a simple non-reentrant gate and reentry attempts revert with `ReentrancyDetected()`.
-- No admin surface. There is no owner, no pause role, no upgrade hook, and no withdrawal path.
+- The upgradeable version introduces an owner only for upgrades and ownership transfer. Offer creation, updates, and purchases remain otherwise permissionless.
 
 ## Recommended Integration Model
 
@@ -259,18 +285,24 @@ Declared in [`src/Errors.sol`](./src/Errors.sol).
 ## Security and Scalability Notes
 
 - The contract uses packed internal storage for offers while preserving a stable external `Offer` ABI.
+- Upgradeable application state is isolated inside an explicit storage namespace rather than depending on inherited storage order.
+- The implementation constructor disables initializers to reduce takeover risk on the implementation address.
 - `offerCount` grows monotonically and is safe for simple append-only indexing.
 - Purchase state is a nested mapping, which keeps lookup cost constant per `(offerId, buyer)` pair.
 - There is no array enumeration on-chain. Production indexing should be event-driven.
 - The current settlement path is optimized for native ETH only. If ERC-20 support is added later, treat that as a new audited version rather than a silent extension.
+- Upgrade authority is restricted to the owner and transferred through a two-step handshake.
 
 Latest measured gas from `forge test --gas-report`:
 
-- Deployment cost: `836945`
-- Deployment size: `3556`
-- `createOffer` average gas: `195419`
-- `purchase` average gas: `65721`
-- `updateOffer` average gas: `33365`
+- Implementation deployment cost: `1482362`
+- Implementation deployment size: `6670`
+- Proxy deployment cost: `180585`
+- Proxy deployment size: `1128`
+- `createOffer` average gas: `171577`
+- `purchase` average gas: `54491`
+- `updateOffer` average gas: `11346`
+- `upgradeToAndCall` average gas: `7203`
 
 ## ABI and Integration Handoff
 
@@ -322,7 +354,7 @@ GitHub Actions ships three relevant workflows:
 - `.github/workflows/security.yml`
   Runs Slither and uploads SARIF output.
 - `.github/workflows/deploy-arbitrum-sepolia.yml`
-  Manual `workflow_dispatch` deployer for both supported networks.
+  Manual `workflow_dispatch` deployer for both supported networks. The workflow deploys a `ProgrammableSecrets` implementation plus `ERC1967Proxy`, records both addresses, derives the upgrade owner from the deployer key, and verifies the implementation and proxy separately on the selected explorer.
 
 ### GitHub Deployment Inputs
 
@@ -351,15 +383,25 @@ Optional verification secrets:
 - `ETH_PK`
 
 The workflow prefers `DEPLOYER_PRIVATE_KEY` and falls back to `ETH_PK`. Keys may be stored with or without `0x`.
+The workflow derives `CONTRACT_OWNER` from the deployer key and passes it into the proxy initializer.
+Deployment artifacts record at least:
+
+- `contractAddress` as the proxy address
+- `proxyAddress`
+- `implementationAddress`
+- `upgradeOwner`
+- `proxyKind`
 
 ## Manual Deployment Commands
 
 Arbitrum Sepolia:
 
 ```bash
+export CONTRACT_OWNER=0xYourUpgradeOwner
+export ETH_PK=0xYourPrivateKey
+
 forge script script/Deploy.s.sol:Deploy \
   --rpc-url https://sepolia-rollup.arbitrum.io/rpc \
-  --private-key "$DEPLOYER_PRIVATE_KEY" \
   --broadcast \
   -vvv
 ```
@@ -367,18 +409,20 @@ forge script script/Deploy.s.sol:Deploy \
 Robinhood Chain Testnet:
 
 ```bash
+export CONTRACT_OWNER=0xYourUpgradeOwner
+export ETH_PK=0xYourPrivateKey
+
 forge script script/Deploy.s.sol:Deploy \
   --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
-  --private-key "$DEPLOYER_PRIVATE_KEY" \
   --broadcast \
   -vvv
 ```
 
-Manual verification on Robinhood uses Blockscout:
+Manual verification for a Robinhood proxy deployment uses Blockscout for the implementation and the proxy separately:
 
 ```bash
 forge verify-contract \
-  0x0C04e50660332dB8Fda62f92c07eA725D0D66e80 \
+  0xImplementationAddress \
   src/ProgrammableSecrets.sol:ProgrammableSecrets \
   --chain-id 46630 \
   --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
@@ -386,6 +430,23 @@ forge verify-contract \
   --verifier-url https://explorer.testnet.chain.robinhood.com/api/ \
   --compiler-version v0.8.24+commit.e11b9ed9 \
   --num-of-optimizations 200 \
+  --watch
+```
+
+```bash
+export INITIALIZER_DATA=$(cast calldata "initialize(address)" "$CONTRACT_OWNER")
+export CONSTRUCTOR_ARGS=$(cast abi-encode "constructor(address,bytes)" 0xImplementationAddress "$INITIALIZER_DATA")
+
+forge verify-contract \
+  0xProxyAddress \
+  @openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --chain-id 46630 \
+  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc \
+  --verifier blockscout \
+  --verifier-url https://explorer.testnet.chain.robinhood.com/api/ \
+  --compiler-version v0.8.24+commit.e11b9ed9 \
+  --num-of-optimizations 200 \
+  --constructor-args "$CONSTRUCTOR_ARGS" \
   --watch
 ```
 
@@ -400,12 +461,5 @@ Robinhood Chain Testnet:
 
 - Blockscout exact match: [explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract](https://explorer.testnet.chain.robinhood.com/address/0x0C04e50660332dB8Fda62f92c07eA725D0D66e80?tab=contract)
 
-## Historical Notes
-
-On `2026-03-06`, the earlier browser rehearsal against the older Sepolia deployment used:
-
-- example offer id `1`
-- offer creation tx `0x189b64468ed7c246e0e1007d7c9d5024ba8ad93a41c68b416184f281693650d9`
-- purchase tx `0x78df1f2ed03b49b0d8cbcf7af941a047a1afd51f19fed3c72008b309d4ab137e`
-- key issue latency `1460 ms`
-- buyer plaintext hash `0x2f1ff5d4604576427dc0f8b691e974d208981f031fe7b3abb86a3f048f4bff3a`
+These explorer links point at the current published testnet contracts.
+Upgradeable deployments from this source verify the implementation and proxy separately.

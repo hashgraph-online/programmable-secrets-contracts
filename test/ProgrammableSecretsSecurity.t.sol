@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
 import {ProgrammableSecrets} from "../src/ProgrammableSecrets.sol";
 import {InvalidExpiry, InvalidOfferHashes, PaymentFailed, OfferExpired} from "../src/Errors.sol";
+import {ProgrammableSecretsTestBase} from "./ProgrammableSecretsTestBase.sol";
 
 contract RejectingPayout {
     receive() external payable {
@@ -42,22 +42,7 @@ contract ReenteringPayout {
     }
 }
 
-contract ProgrammableSecretsSecurityTest is Test {
-    ProgrammableSecrets private programmableSecrets;
-
-    address private constant PROVIDER = address(0xA11CE);
-    address private constant BUYER = address(0xCAFE);
-
-    bytes32 private constant CIPHERTEXT_HASH = keccak256("ciphertext");
-    bytes32 private constant KEY_COMMITMENT = keccak256("content-key");
-    bytes32 private constant METADATA_HASH = keccak256("metadata");
-    bytes32 private constant PROVIDER_UAID_HASH = keccak256("uaid");
-
-    function setUp() public {
-        programmableSecrets = new ProgrammableSecrets();
-        vm.deal(BUYER, 100 ether);
-    }
-
+contract ProgrammableSecretsSecurityTest is ProgrammableSecretsTestBase {
     function testCreateOfferRejectsZeroCiphertextHash() public {
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidOfferHashes.selector);
@@ -106,7 +91,7 @@ contract ProgrammableSecretsSecurityTest is Test {
     }
 
     function testUpdateOfferRejectsZeroMetadataHash() public {
-        uint256 offerId = _createOffer(PROVIDER, 1 ether, uint64(block.timestamp + 1 days));
+        uint256 offerId = _createOffer(1 ether, uint64(block.timestamp + 1 days), true);
 
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidOfferHashes.selector);
@@ -114,7 +99,7 @@ contract ProgrammableSecretsSecurityTest is Test {
     }
 
     function testUpdateOfferRejectsImmediateExpiry() public {
-        uint256 offerId = _createOffer(PROVIDER, 1 ether, uint64(block.timestamp + 1 days));
+        uint256 offerId = _createOffer(1 ether, uint64(block.timestamp + 1 days), true);
 
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidExpiry.selector);
@@ -122,7 +107,7 @@ contract ProgrammableSecretsSecurityTest is Test {
     }
 
     function testPurchaseRevertsAtExactExpiryTimestamp() public {
-        uint256 offerId = _createOffer(PROVIDER, 1 ether, uint64(block.timestamp + 1 days));
+        uint256 offerId = _createOffer(1 ether, uint64(block.timestamp + 1 days), true);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(BUYER);
@@ -132,7 +117,7 @@ contract ProgrammableSecretsSecurityTest is Test {
 
     function testPurchaseRevertsWhenPayoutRejectsEtherAndDoesNotGrantAccess() public {
         RejectingPayout payout = new RejectingPayout();
-        uint256 offerId = _createOffer(address(payout), 1 ether, 0);
+        uint256 offerId = _createOfferForPayout(address(payout), 1 ether, 0);
 
         vm.prank(BUYER);
         vm.expectRevert(PaymentFailed.selector);
@@ -143,8 +128,8 @@ contract ProgrammableSecretsSecurityTest is Test {
 
     function testPurchaseBlocksPayoutReentrancy() public {
         ReenteringPayout payout = new ReenteringPayout(programmableSecrets);
-        uint256 outerOfferId = _createOffer(address(payout), 1 ether, 0);
-        uint256 reenterOfferId = _createOffer(address(payout), 1 ether, 0);
+        uint256 outerOfferId = _createOfferForPayout(address(payout), 1 ether, 0);
+        uint256 reenterOfferId = _createOfferForPayout(address(payout), 1 ether, 0);
 
         payout.configure(reenterOfferId, 1 ether);
 
@@ -155,12 +140,5 @@ contract ProgrammableSecretsSecurityTest is Test {
         assertTrue(!payout.succeeded());
         assertTrue(programmableSecrets.hasAccess(outerOfferId, BUYER));
         assertTrue(!programmableSecrets.hasAccess(reenterOfferId, address(payout)));
-    }
-
-    function _createOffer(address payout, uint96 price, uint64 expiresAt) private returns (uint256 offerId) {
-        vm.prank(PROVIDER);
-        offerId = programmableSecrets.createOffer(
-            payout, address(0), price, expiresAt, CIPHERTEXT_HASH, KEY_COMMITMENT, METADATA_HASH, PROVIDER_UAID_HASH
-        );
     }
 }

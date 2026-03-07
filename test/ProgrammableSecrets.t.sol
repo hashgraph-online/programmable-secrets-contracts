@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
 import {Log} from "forge-std/Vm.sol";
 import {ProgrammableSecrets} from "../src/ProgrammableSecrets.sol";
 import {
@@ -13,30 +12,14 @@ import {
     InvalidPrice,
     InvalidPaymentToken
 } from "../src/Errors.sol";
+import {ProgrammableSecretsTestBase} from "./ProgrammableSecretsTestBase.sol";
 
-contract ProgrammableSecretsTest is Test {
+contract ProgrammableSecretsTest is ProgrammableSecretsTestBase {
     bytes32 private constant OFFER_CREATED_SIG =
         keccak256("OfferCreated(uint256,address,address,address,uint256,uint64,bytes32,bytes32,bytes32,bytes32)");
     bytes32 private constant OFFER_UPDATED_SIG = keccak256("OfferUpdated(uint256,uint256,uint64,bool,bytes32)");
     bytes32 private constant ACCESS_PURCHASED_SIG =
         keccak256("AccessPurchased(uint256,address,address,address,uint256,uint64,bytes32,bytes32)");
-
-    ProgrammableSecrets private programmableSecrets;
-
-    address private constant PROVIDER = address(0xA11CE);
-    address private constant PAYOUT = address(0xBEEF);
-    address private constant BUYER = address(0xCAFE);
-    address private constant RECIPIENT = address(0xD00D);
-
-    bytes32 private constant CIPHERTEXT_HASH = keccak256("ciphertext");
-    bytes32 private constant KEY_COMMITMENT = keccak256("content-key");
-    bytes32 private constant METADATA_HASH = keccak256("metadata");
-    bytes32 private constant PROVIDER_UAID_HASH = keccak256("uaid");
-
-    function setUp() public {
-        programmableSecrets = new ProgrammableSecrets();
-        vm.deal(BUYER, 100 ether);
-    }
 
     function testCreateOfferStoresCorrectFieldsAndEmitsEvent() public {
         vm.recordLogs();
@@ -172,6 +155,15 @@ contract ProgrammableSecretsTest is Test {
         assertTrue(programmableSecrets.purchasedTimestamp(offerId, BUYER) > 0);
     }
 
+    function testOfferCountTracksProxyState() public {
+        assertEqUint(programmableSecrets.offerCount(), uint256(0));
+
+        _createOffer(1 ether, 0, true);
+        _createOffer(2 ether, uint64(block.timestamp + 1 days), true);
+
+        assertEqUint(programmableSecrets.offerCount(), uint256(2));
+    }
+
     function testPurchaseRecordsTimestampPayoutAndEmitsEvent() public {
         uint256 offerId = _createOffer(1 ether, 0, true);
         uint256 payoutBalanceBefore = PAYOUT.balance;
@@ -241,17 +233,5 @@ contract ProgrammableSecretsTest is Test {
         vm.prank(BUYER);
         vm.expectRevert(AlreadyPurchased.selector);
         programmableSecrets.purchase{value: price}(offerId, BUYER);
-    }
-
-    function _createOffer(uint96 price, uint64 expiresAt, bool active) private returns (uint256 offerId) {
-        vm.prank(PROVIDER);
-        offerId = programmableSecrets.createOffer(
-            PAYOUT, address(0), price, expiresAt, CIPHERTEXT_HASH, KEY_COMMITMENT, METADATA_HASH, PROVIDER_UAID_HASH
-        );
-
-        if (!active) {
-            vm.prank(PROVIDER);
-            programmableSecrets.updateOffer(offerId, price, expiresAt, false, METADATA_HASH);
-        }
     }
 }

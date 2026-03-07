@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ProgrammableSecretsEvents} from "./Events.sol";
 import {
     NotOfferProvider,
@@ -12,11 +16,16 @@ import {
     InvalidExpiry,
     InvalidPaymentToken,
     InvalidOfferHashes,
-    PaymentFailed,
-    ReentrancyDetected
+    PaymentFailed
 } from "./Errors.sol";
 
-contract ProgrammableSecrets is ProgrammableSecretsEvents {
+contract ProgrammableSecrets is
+    Initializable,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    ProgrammableSecretsEvents
+{
     struct Offer {
         address provider;
         address payout;
@@ -45,20 +54,25 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         bytes32 providerUaidHash;
     }
 
-    uint256 private constant NOT_ENTERED = 1;
-    uint256 private constant ENTERED = 2;
+    /// @custom:storage-location erc7201:hashgraphonline.storage.ProgrammableSecrets
+    struct ProgrammableSecretsStorage {
+        uint256 offerCounter;
+        mapping(uint256 => PackedOffer) offers;
+        mapping(uint256 => mapping(address => uint64)) purchaseTimestamps;
+    }
 
-    uint256 public offerCount;
+    bytes32 private constant PROGRAMMABLE_SECRETS_STORAGE_LOCATION =
+        0x813404bd5df493b2ad6149ba36536a19b27204935defea8660ff53704fb84c00;
 
-    mapping(uint256 => PackedOffer) internal offers;
-    mapping(uint256 => mapping(address => uint64)) public purchasedAt;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
-    uint256 private unlocked = NOT_ENTERED;
-
-    modifier nonReentrant() {
-        _nonReentrantBefore();
-        _;
-        _nonReentrantAfter();
+    /// @notice Initializes the proxy with the upgrade owner.
+    function initialize(address initialOwner) external initializer {
+        __Ownable_init(initialOwner);
+        __Ownable2Step_init();
     }
 
     /// @notice Creates a new programmable secret offer with immutable integrity anchors.
@@ -73,6 +87,8 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         bytes32 metadataHash,
         bytes32 providerUaidHash
     ) external returns (uint256 offerId) {
+        ProgrammableSecretsStorage storage $ = _getProgrammableSecretsStorage();
+
         if (paymentToken != address(0)) {
             revert InvalidPaymentToken();
         }
@@ -82,12 +98,12 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         _validateExpiry(expiresAt);
         _validateOfferHashes(ciphertextHash, keyCommitment, metadataHash, providerUaidHash);
 
-        offerId = ++offerCount;
+        offerId = ++$.offerCounter;
 
         address normalizedPayout = payout == address(0) ? msg.sender : payout;
         uint64 createdAt = uint64(block.timestamp);
 
-        offers[offerId] = PackedOffer({
+        $.offers[offerId] = PackedOffer({
             provider: msg.sender,
             price: price,
             payout: normalizedPayout,
@@ -160,7 +176,7 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         if (paymentToken != address(0)) {
             revert InvalidPaymentToken();
         }
-        if (purchasedAt[offerId][msg.sender] != 0) {
+        if (purchasedAt(offerId, msg.sender) != 0) {
             revert AlreadyPurchased();
         }
         uint96 price = offer.price;
@@ -169,7 +185,7 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
         }
 
         uint64 purchasedTimestampValue = uint64(block.timestamp);
-        purchasedAt[offerId][msg.sender] = purchasedTimestampValue;
+        _getProgrammableSecretsStorage().purchaseTimestamps[offerId][msg.sender] = purchasedTimestampValue;
 
         address payout = offer.payout;
         (bool success,) = payout.call{value: msg.value}("");
@@ -193,30 +209,33 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
 
     /// @notice Returns whether a buyer has already purchased access to an offer.
     function hasAccess(uint256 offerId, address user) external view returns (bool) {
-        return purchasedAt[offerId][user] != 0;
+        return purchasedAt(offerId, user) != 0;
+    }
+
+    /// @notice Returns the total number of offers created through the proxy.
+    function offerCount() public view returns (uint256) {
+        return _getProgrammableSecretsStorage().offerCounter;
     }
 
     /// @notice Returns the purchase timestamp for a buyer or zero when access has not been purchased.
     function purchasedTimestamp(uint256 offerId, address user) external view returns (uint64) {
-        return purchasedAt[offerId][user];
+        return purchasedAt(offerId, user);
+    }
+
+    /// @notice Returns the raw nested purchase timestamp mapping entry.
+    function purchasedAt(uint256 offerId, address buyer) public view returns (uint64) {
+        return _getProgrammableSecretsStorage().purchaseTimestamps[offerId][buyer];
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        newImplementation;
     }
 
     function _getOfferStorage(uint256 offerId) internal view returns (PackedOffer storage offer) {
-        offer = offers[offerId];
+        offer = _getProgrammableSecretsStorage().offers[offerId];
         if (offer.provider == address(0)) {
             revert OfferNotFound();
         }
-    }
-
-    function _nonReentrantBefore() internal {
-        if (unlocked != NOT_ENTERED) {
-            revert ReentrancyDetected();
-        }
-        unlocked = ENTERED;
-    }
-
-    function _nonReentrantAfter() internal {
-        unlocked = NOT_ENTERED;
     }
 
     function _validateExpiry(uint64 expiresAt) internal view {
@@ -253,5 +272,11 @@ contract ProgrammableSecrets is ProgrammableSecretsEvents {
             metadataHash: offer.metadataHash,
             providerUaidHash: offer.providerUaidHash
         });
+    }
+
+    function _getProgrammableSecretsStorage() private pure returns (ProgrammableSecretsStorage storage $) {
+        assembly {
+            $.slot := PROGRAMMABLE_SECRETS_STORAGE_LOCATION
+        }
     }
 }
