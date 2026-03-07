@@ -50,6 +50,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         TimeRangeCondition customEvaluator = new TimeRangeCondition();
         bytes32 metadataHash = keccak256("custom-evaluator");
         uint256 ownerBalanceBefore = UPGRADE_OWNER.balance;
+        uint256 evaluatorCountBefore = policyVault.getPolicyEvaluatorCount();
 
         vm.deal(PROVIDER, 1 ether);
         vm.recordLogs();
@@ -65,8 +66,18 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         assertEqBool(registration.active, true);
         assertEqBool(registration.builtIn, false);
         assertEqUint(UPGRADE_OWNER.balance, ownerBalanceBefore + 0.05 ether);
+        assertEqUint(policyVault.getPolicyEvaluatorCount(), evaluatorCountBefore + 1);
+        assertEqAddress(policyVault.getPolicyEvaluatorAt(evaluatorCountBefore), address(customEvaluator));
         assertEqUint(entries.length, uint256(1));
         assertEqBytes32(entries[0].topics[0], POLICY_EVALUATOR_REGISTERED_SIG);
+    }
+
+    function testBuiltInEvaluatorsAreIndexed() public view {
+        uint256 evaluatorCount = policyVault.getPolicyEvaluatorCount();
+        assertEqUint(evaluatorCount, uint256(3));
+        assertEqAddress(policyVault.getPolicyEvaluatorAt(0), address(timeRangeCondition));
+        assertEqAddress(policyVault.getPolicyEvaluatorAt(1), address(uaidOwnershipCondition));
+        assertEqAddress(policyVault.getPolicyEvaluatorAt(2), address(addressAllowlistCondition));
     }
 
     function testRegisterPolicyEvaluatorRejectsWrongFee() public {

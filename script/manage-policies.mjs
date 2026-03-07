@@ -10,6 +10,7 @@ import { config as loadDotenv } from 'dotenv';
 import {
   createPublicClient,
   createWalletClient,
+  decodeAbiParameters,
   decodeEventLog,
   formatEther,
   getAddress,
@@ -176,27 +177,26 @@ const POLICY_VAULT_ABI = parseAbi([
   'function setDatasetActive(uint256 datasetId,bool active)',
   'function datasetCount() view returns (uint256)',
   'function policyCount() view returns (uint256)',
-  'function getPolicy(uint256 policyId) view returns ((address provider,address payout,address paymentToken,uint96 price,uint64 createdAt,uint64 expiresAt,bool active,bool allowlistEnabled,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash,uint256 datasetId,bytes32 policyType,bytes32 requiredBuyerUaidHash,address identityRegistry,uint256 agentId))',
+  'function getPolicy(uint256 policyId) view returns ((address provider,address payout,address paymentToken,uint96 price,uint64 createdAt,bool active,bool allowlistEnabled,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash,uint256 datasetId,bytes32 conditionsHash,uint32 conditionCount))',
   'function getDataset(uint256 datasetId) view returns ((address provider,uint64 createdAt,bool active,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash))',
   'function getDatasetPolicyCount(uint256 datasetId) view returns (uint256)',
   'function getDatasetPolicyIdAt(uint256 datasetId,uint256 index) view returns (uint256)',
   'function getDatasetPolicyIds(uint256 datasetId) view returns (uint256[])',
-  'function createTimeboundPolicy(uint256 datasetId,address payout,address paymentToken,uint96 price,uint64 expiresAt,bool allowlistEnabled,bytes32 metadataHash,address[] allowlistAccounts) returns (uint256 policyId)',
-  'function createUaidBoundPolicy(uint256 datasetId,address payout,address paymentToken,uint96 price,uint64 expiresAt,bool allowlistEnabled,bytes32 metadataHash,bytes32 requiredBuyerUaidHash,address identityRegistry,uint256 agentId,address[] allowlistAccounts) returns (uint256 policyId)',
-  'function createPolicyForDataset(uint256 datasetId,bytes32 policyType,address payout,address paymentToken,uint96 price,uint64 expiresAt,bool allowlistEnabled,bytes32 metadataHash,address[] allowlistAccounts) returns (uint256 policyId)',
-  'function updatePolicy(uint256 policyId,uint96 newPrice,uint64 newExpiresAt,bool active,bool allowlistEnabled,bytes32 newMetadataHash)',
-  'function setAllowlist(uint256 policyId,address[] accounts,bool allowed)',
-  'function isAllowlisted(uint256 policyId,address account) view returns (bool)',
-  'function isSupportedPolicyType(bytes32 policyType) view returns (bool)',
+  'function createPolicyForDataset(uint256 datasetId,address payout,address paymentToken,uint96 price,bytes32 metadataHash,(address evaluator,bytes configData)[] conditions) returns (uint256 policyId)',
+  'function updatePolicy(uint256 policyId,uint96 newPrice,bool active,bytes32 newMetadataHash)',
+  'function getPolicyConditionCount(uint256 policyId) view returns (uint256)',
+  'function getPolicyCondition(uint256 policyId,uint256 index) view returns (address evaluator,bytes configData,bytes32 configHash)',
+  'function getPolicyEvaluator(address evaluator) view returns ((address registrant,bytes32 metadataHash,uint64 registeredAt,bool active,bool builtIn))',
+  'function getPolicyEvaluatorCount() view returns (uint256)',
+  'function getPolicyEvaluatorAt(uint256 index) view returns (address evaluator)',
   'event DatasetRegistered(uint256 indexed datasetId,address indexed provider,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash)',
   'event DatasetStatusUpdated(uint256 indexed datasetId,bool active)',
-  'event PolicyCreated(uint256 indexed policyId,uint256 indexed datasetId,address indexed provider,address payout,address paymentToken,bytes32 policyType,uint256 price,uint64 expiresAt,bool allowlistEnabled,bytes32 metadataHash,bytes32 datasetMetadataHash)',
-  'event PolicyUpdated(uint256 indexed policyId,uint256 indexed datasetId,uint256 price,uint64 expiresAt,bool active,bool allowlistEnabled,bytes32 metadataHash)',
-  'event AllowlistUpdated(uint256 indexed policyId,address indexed account,bool allowed)',
+  'event PolicyCreated(uint256 indexed policyId,uint256 indexed datasetId,address indexed provider,address payout,address paymentToken,uint256 price,bytes32 conditionsHash,uint32 conditionCount,bytes32 metadataHash,bytes32 datasetMetadataHash)',
+  'event PolicyUpdated(uint256 indexed policyId,uint256 indexed datasetId,uint256 newPrice,bool active,bytes32 newMetadataHash)',
 ]);
 
 const PAYMENT_MODULE_ABI = parseAbi([
-  'function purchase(uint256 policyId,address recipient,string buyerUaid) payable returns (uint256 receiptTokenId)',
+  'function purchase(uint256 policyId,address recipient,bytes[] conditionRuntimeInputs) payable returns (uint256 receiptTokenId)',
   'function hasAccess(uint256 policyId,address buyer) view returns (bool)',
   'function hasDatasetAccess(uint256 datasetId,address buyer) view returns (bool)',
   'function receiptOfPolicyAndBuyer(uint256 policyId,address buyer) view returns (uint256)',
@@ -1488,6 +1488,22 @@ function requireIdentityRegistryAddress(network) {
   return identityRegistryAddress;
 }
 
+function resolveConditionEvaluatorAddress(networkId, kind, overrideValue = null) {
+  if (overrideValue) {
+    return getAddress(overrideValue);
+  }
+  const catalog = getBuiltInEvaluatorCatalog(networkId);
+  const entry = Object.values(catalog).find((candidate) => candidate.kind === kind);
+  if (!entry) {
+    throw new CliError(
+      'MISSING_EVALUATOR_ADDRESS',
+      `No ${kind} evaluator address is available for ${networkId}.`,
+      `Add builtInPolicyEvaluators.${kind} to deployments/${networkId}.json or pass an explicit evaluator address.`,
+    );
+  }
+  return getAddress(entry.address);
+}
+
 function getWalletKeyForRole(role) {
   if (role === 'provider') {
     return requireSecondWallet();
@@ -1511,14 +1527,141 @@ function formatTimestamp(unixSeconds) {
   return new Date(Number(unixSeconds) * 1000).toISOString();
 }
 
-function decodePolicyTypeLabel(policyType) {
-  if (policyType === keccak256(toBytes('TIMEBOUND_V1'))) {
+function normalizeAddress(value) {
+  return getAddress(value).toLowerCase();
+}
+
+function getBuiltInEvaluatorCatalog(networkId) {
+  const deployment = loadDeployment(networkId);
+  const builtIns = deployment.contracts?.builtInPolicyEvaluators;
+  if (!builtIns) {
+    return {};
+  }
+  const catalog = {};
+  for (const [key, entry] of Object.entries(builtIns)) {
+    if (!entry?.address) {
+      continue;
+    }
+    catalog[normalizeAddress(entry.address)] = {
+      address: getAddress(entry.address),
+      kind: key,
+    };
+  }
+  return catalog;
+}
+
+function decodeConditionConfig(kind, configData) {
+  try {
+    if (kind === 'timeRangeCondition') {
+      const [decoded] = decodeAbiParameters(
+        parseAbiParameters('(uint64 notBefore,uint64 notAfter) value'),
+        configData,
+      );
+      return {
+        decoded,
+        runtimeWitness: 'none',
+      };
+    }
+    if (kind === 'uaidOwnershipCondition') {
+      const [decoded] = decodeAbiParameters(
+        parseAbiParameters('(bytes32 requiredBuyerUaidHash,address identityRegistry,uint256 agentId) value'),
+        configData,
+      );
+      return {
+        decoded,
+        runtimeWitness: 'buyer-uaid',
+      };
+    }
+    if (kind === 'addressAllowlistCondition') {
+      const [decoded] = decodeAbiParameters(parseAbiParameters('address[] value'), configData);
+      return {
+        decoded,
+        runtimeWitness: 'none',
+      };
+    }
+  } catch {
+    return {
+      decoded: null,
+      runtimeWitness: 'unknown',
+    };
+  }
+  return {
+    decoded: null,
+    runtimeWitness: 'unknown',
+  };
+}
+
+async function readPolicyConditions({ publicClient, networkId, policyId }) {
+  const policyVaultAddress = buildPolicyVaultAddress(networkId);
+  const builtInCatalog = getBuiltInEvaluatorCatalog(networkId);
+  const conditionCount = await publicClient.readContract({
+    address: policyVaultAddress,
+    abi: POLICY_VAULT_ABI,
+    functionName: 'getPolicyConditionCount',
+    args: [policyId],
+  });
+  const items = [];
+  for (let index = 0n; index < conditionCount; index += 1n) {
+    const [evaluator, configData, configHash] = await publicClient.readContract({
+      address: policyVaultAddress,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'getPolicyCondition',
+      args: [policyId, index],
+    });
+    const registration = await publicClient.readContract({
+      address: policyVaultAddress,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'getPolicyEvaluator',
+      args: [evaluator],
+    });
+    const builtIn = builtInCatalog[normalizeAddress(evaluator)] || null;
+    const decoded = decodeConditionConfig(builtIn?.kind || 'unknown', configData);
+    items.push({
+      builtInKind: builtIn?.kind || null,
+      configData,
+      configHash,
+      configSummary: decoded.decoded,
+      evaluator,
+      evaluatorRegistration: registration,
+      index,
+      runtimeWitness: decoded.runtimeWitness,
+    });
+  }
+  return items;
+}
+
+function buildConditionRuntimeInputs(conditions, options) {
+  const buyerUaid = readOption(options, ['buyer-uaid'], '').trim();
+  const runtimeInputs = [];
+  for (const condition of conditions) {
+    if (condition.runtimeWitness === 'buyer-uaid') {
+      if (!buyerUaid) {
+        throw new CliError(
+          'MISSING_BUYER_UAID',
+          'This policy requires --buyer-uaid for purchase runtime inputs.',
+          `Rerun with: ${CLI_COMMAND} purchase --policy-id <id> --buyer-uaid <uaid>`,
+        );
+      }
+      runtimeInputs.push(encodeAbiParameters(parseAbiParameters('string value'), [buyerUaid]));
+      continue;
+    }
+    runtimeInputs.push('0x');
+  }
+  return runtimeInputs;
+}
+
+function buildPolicyCategory(conditions) {
+  const kinds = new Set(conditions.map((condition) => condition.builtInKind).filter(Boolean));
+  if (kinds.has('uaidOwnershipCondition')) {
+    return 'uaid-gated';
+  }
+  if (kinds.has('timeRangeCondition')) {
     return 'timebound';
   }
-  if (policyType === keccak256(toBytes('UAID_ERC8004_V1'))) {
-    return 'uaid-erc8004';
+  if (kinds.has('addressAllowlistCondition')) {
+    return 'allowlisted';
   }
-  return policyType;
+  return 'custom';
 }
 
 function printDatasetSummary(datasetId, dataset) {
@@ -1538,17 +1681,12 @@ function printPolicySummary(policyId, policy) {
   printField('Provider', policy.provider);
   printField('Payout', policy.payout);
   printField('Price', `${formatEther(policy.price)} ETH (${policy.price} wei)`);
-  printField('Type', decodePolicyTypeLabel(policy.policyType));
   printField('Active', policy.active);
   printField('Allowlist', policy.allowlistEnabled);
-  printField('Expires', formatTimestamp(policy.expiresAt));
+  printField('Conditions', policy.conditionCount);
   printField('Created', formatTimestamp(policy.createdAt));
   printField('Metadata', policy.metadataHash);
-  if (policy.requiredBuyerUaidHash !== zeroHash()) {
-    printField('Req UAID', policy.requiredBuyerUaidHash);
-    printField('Identity reg', policy.identityRegistry);
-    printField('Agent id', policy.agentId);
-  }
+  printField('ConditionsHash', policy.conditionsHash);
 }
 
 function printReceiptSummary(receiptTokenId, receipt) {
@@ -1580,23 +1718,20 @@ function serializeDataset(datasetId, dataset, policyIds = []) {
 function serializePolicy(policyId, policy) {
   return {
     active: policy.active,
-    agentId: policy.agentId,
     allowlistEnabled: policy.allowlistEnabled,
     createdAt: policy.createdAt,
+    conditionCount: policy.conditionCount,
+    conditionsHash: policy.conditionsHash,
     ciphertextHash: policy.ciphertextHash,
     datasetId: policy.datasetId,
-    expiresAt: policy.expiresAt,
-    identityRegistry: policy.identityRegistry,
     keyCommitment: policy.keyCommitment,
     metadataHash: policy.metadataHash,
     paymentToken: policy.paymentToken,
     payout: policy.payout,
     policyId,
-    policyType: policy.policyType,
     priceWei: policy.price,
     provider: policy.provider,
     providerUaidHash: policy.providerUaidHash,
-    requiredBuyerUaidHash: policy.requiredBuyerUaidHash,
   };
 }
 
@@ -1931,7 +2066,7 @@ async function listPolicies() {
       console.log(`  Provider:  ${p.provider}`);
       console.log(`  Price:     ${formatEther(p.price)} ETH (${p.price} wei)`);
       console.log(`  Active:    ${p.active}`);
-      console.log(`  ExpiresAt: ${new Date(Number(p.expiresAt) * 1000).toISOString()}`);
+      console.log(`  Conditions: ${p.conditionCount}`);
       console.log(`  DatasetID: ${p.datasetId}`);
       console.log(`  MetaHash:  ${p.metadataHash}`);
       console.log('');
@@ -1974,7 +2109,7 @@ async function deactivateAll() {
         address: policyVaultAddress,
         abi: POLICY_VAULT_ABI,
         functionName: 'updatePolicy',
-        args: [i, p.price, p.expiresAt, false, p.allowlistEnabled, p.metadataHash],
+        args: [i, p.price, false, p.metadataHash],
       });
       console.log(`Policy #${i}: deactivated — tx ${tx}`);
       await publicClient.waitForTransactionReceipt({ hash: tx });
@@ -2240,8 +2375,15 @@ async function listPoliciesCommand(options) {
     if (datasetIdFilter && `${policy.datasetId}` !== `${datasetIdFilter}`) {
       continue;
     }
+    const conditions = await readPolicyConditions({
+      publicClient,
+      networkId,
+      policyId,
+    });
     items.push({
       ...serializePolicy(policyId, policy),
+      category: buildPolicyCategory(conditions),
+      conditions,
       network: chain.name,
     });
     if (CLI_RUNTIME.json) {
@@ -2270,8 +2412,15 @@ async function getPolicyCommand(options) {
     functionName: 'getPolicy',
     args: [policyId],
   });
+  const conditions = await readPolicyConditions({
+    publicClient,
+    networkId,
+    policyId,
+  });
   const payload = {
     ...serializePolicy(policyId, policy),
+    category: buildPolicyCategory(conditions),
+    conditions,
     network: chain.name,
   };
   if (CLI_RUNTIME.json) {
@@ -2301,6 +2450,39 @@ async function createTimeboundPolicyCommand(options) {
   const allowlistEnabled = parseBooleanOption(readOption(options, ['allowlist-enabled'], false), false);
   const metadataHash = resolveMetadataHash(options);
   const allowlistAccounts = resolveAllowlistAccounts(options);
+  const conditions = [];
+  if (expiresAt > 0n) {
+    const timeRangeEvaluator = resolveConditionEvaluatorAddress(
+      networkId,
+      'timeRangeCondition',
+      readOption(options, ['time-range-evaluator'], null),
+    );
+    conditions.push({
+      evaluator: timeRangeEvaluator,
+      configData: encodeAbiParameters(
+        parseAbiParameters('(uint64 notBefore,uint64 notAfter) value'),
+        [{ notBefore: 0n, notAfter: expiresAt }],
+      ),
+    });
+  }
+  if (allowlistEnabled) {
+    if (allowlistAccounts.length === 0) {
+      throw new CliError(
+        'MISSING_ALLOWLIST_ACCOUNTS',
+        'Allowlist is enabled but no allowlist accounts were provided.',
+        `Pass --accounts 0x... when using --allowlist-enabled true.`,
+      );
+    }
+    const allowlistEvaluator = resolveConditionEvaluatorAddress(
+      networkId,
+      'addressAllowlistCondition',
+      readOption(options, ['allowlist-evaluator'], null),
+    );
+    conditions.push({
+      evaluator: allowlistEvaluator,
+      configData: encodeAbiParameters(parseAbiParameters('address[] value'), [allowlistAccounts]),
+    });
+  }
   const preview = {
     action: 'Create Timebound Policy',
     address: buildPolicyVaultAddress(networkId),
@@ -2309,13 +2491,11 @@ async function createTimeboundPolicyCommand(options) {
       payout,
       zeroAddress,
       priceWei,
-      expiresAt,
-      allowlistEnabled,
       metadataHash,
-      allowlistAccounts,
+      conditions,
     ],
     contract: 'PolicyVault',
-    functionName: 'createTimeboundPolicy',
+    functionName: 'createPolicyForDataset',
     network: chain.name,
     nextCommand: `${CLI_COMMAND} policies list --dataset-id ${datasetId}`,
     valueWei: 0n,
@@ -2328,16 +2508,14 @@ async function createTimeboundPolicyCommand(options) {
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
-    functionName: 'createTimeboundPolicy',
+    functionName: 'createPolicyForDataset',
     args: [
       datasetId,
       payout,
       zeroAddress,
       priceWei,
-      expiresAt,
-      allowlistEnabled,
       metadataHash,
-      allowlistAccounts,
+      conditions,
     ],
     chain,
     account: walletClient.account,
@@ -2383,6 +2561,57 @@ async function createUaidPolicyCommand(options) {
   const identityRegistry = getAddress(
     readOption(options, ['identity-registry'], buildIdentityRegistryAddress(networkId)),
   );
+  const conditions = [];
+  if (expiresAt > 0n) {
+    const timeRangeEvaluator = resolveConditionEvaluatorAddress(
+      networkId,
+      'timeRangeCondition',
+      readOption(options, ['time-range-evaluator'], null),
+    );
+    conditions.push({
+      evaluator: timeRangeEvaluator,
+      configData: encodeAbiParameters(
+        parseAbiParameters('(uint64 notBefore,uint64 notAfter) value'),
+        [{ notBefore: 0n, notAfter: expiresAt }],
+      ),
+    });
+  }
+  if (allowlistEnabled) {
+    if (allowlistAccounts.length === 0) {
+      throw new CliError(
+        'MISSING_ALLOWLIST_ACCOUNTS',
+        'Allowlist is enabled but no allowlist accounts were provided.',
+        `Pass --accounts 0x... when using --allowlist-enabled true.`,
+      );
+    }
+    const allowlistEvaluator = resolveConditionEvaluatorAddress(
+      networkId,
+      'addressAllowlistCondition',
+      readOption(options, ['allowlist-evaluator'], null),
+    );
+    conditions.push({
+      evaluator: allowlistEvaluator,
+      configData: encodeAbiParameters(parseAbiParameters('address[] value'), [allowlistAccounts]),
+    });
+  }
+  const uaidEvaluator = resolveConditionEvaluatorAddress(
+    networkId,
+    'uaidOwnershipCondition',
+    readOption(options, ['uaid-evaluator'], null),
+  );
+  conditions.push({
+    evaluator: uaidEvaluator,
+    configData: encodeAbiParameters(
+      parseAbiParameters('(bytes32 requiredBuyerUaidHash,address identityRegistry,uint256 agentId) value'),
+      [
+        {
+          requiredBuyerUaidHash: buildHashFromText(requiredBuyerUaid),
+          identityRegistry,
+          agentId,
+        },
+      ],
+    ),
+  });
   const preview = {
     action: 'Create UAID Policy',
     address: buildPolicyVaultAddress(networkId),
@@ -2391,16 +2620,11 @@ async function createUaidPolicyCommand(options) {
       payout,
       zeroAddress,
       priceWei,
-      expiresAt,
-      allowlistEnabled,
       metadataHash,
-      buildHashFromText(requiredBuyerUaid),
-      identityRegistry,
-      agentId,
-      allowlistAccounts,
+      conditions,
     ],
     contract: 'PolicyVault',
-    functionName: 'createUaidBoundPolicy',
+    functionName: 'createPolicyForDataset',
     network: chain.name,
     nextCommand: `${CLI_COMMAND} policies get --policy-id <policy-id>`,
     valueWei: 0n,
@@ -2413,19 +2637,14 @@ async function createUaidPolicyCommand(options) {
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
-    functionName: 'createUaidBoundPolicy',
+    functionName: 'createPolicyForDataset',
     args: [
       datasetId,
       payout,
       zeroAddress,
       priceWei,
-      expiresAt,
-      allowlistEnabled,
       metadataHash,
-      buildHashFromText(requiredBuyerUaid),
-      identityRegistry,
-      agentId,
-      allowlistAccounts,
+      conditions,
     ],
     chain,
     account: walletClient.account,
@@ -2468,15 +2687,9 @@ async function updatePolicyCommand(options) {
   });
 
   const nextPrice = readOption(options, ['price-wei', 'price-eth']) ? resolvePriceWei(options) : existing.price;
-  const nextExpiry = readOption(options, ['expires-at-unix', 'expires-at-iso', 'duration-hours'])
-    ? resolveExpiryUnix(options)
-    : existing.expiresAt;
   const active = readOption(options, ['active']) !== null
     ? parseBooleanOption(readOption(options, ['active']))
     : existing.active;
-  const allowlistEnabled = readOption(options, ['allowlist-enabled']) !== null
-    ? parseBooleanOption(readOption(options, ['allowlist-enabled']))
-    : existing.allowlistEnabled;
   const metadataHash = readOption(options, ['metadata-hash', 'metadata', 'metadata-file', 'metadata-json']) !== null
     ? resolveMetadataHash(options)
     : existing.metadataHash;
@@ -2484,7 +2697,7 @@ async function updatePolicyCommand(options) {
   const preview = {
     action: 'Update Policy',
     address: buildPolicyVaultAddress(networkId),
-    args: [policyId, nextPrice, nextExpiry, active, allowlistEnabled, metadataHash],
+    args: [policyId, nextPrice, active, metadataHash],
     contract: 'PolicyVault',
     functionName: 'updatePolicy',
     network: chain.name,
@@ -2500,7 +2713,7 @@ async function updatePolicyCommand(options) {
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
     functionName: 'updatePolicy',
-    args: [policyId, nextPrice, nextExpiry, active, allowlistEnabled, metadataHash],
+    args: [policyId, nextPrice, active, metadataHash],
     chain,
     account: walletClient.account,
   });
@@ -2520,59 +2733,11 @@ async function updatePolicyCommand(options) {
 
 async function setPolicyAllowlistCommand(options) {
   const policyId = parseBigIntValue(requireOption(options, 'policy-id', 'policy id'), 'policy-id');
-  const accounts = resolveAllowlistAccounts(options);
-  const allowed = parseBooleanOption(requireOption(options, 'allowed', 'allowlist state'));
-  if (accounts.length === 0) {
-    throw new CliError(
-      'MISSING_ALLOWLIST_ACCOUNTS',
-      'Provide at least one account with --accounts.',
-      `Example: ${CLI_COMMAND} policies allowlist --policy-id ${policyId} --accounts 0xabc,0xdef --allowed true`,
-    );
-  }
-  const networkId = getNetworkIdFromOptions(options);
-  const chain = getSelectedChain(networkId);
-  const walletClient = getWalletClientForRole({
-    role: resolveSelectedWalletRole(options, 'provider'),
-    chain,
-  });
-  const publicClient = getPublicClient(chain);
-  const preview = {
-    action: 'Update Policy Allowlist',
-    address: buildPolicyVaultAddress(networkId),
-    args: [policyId, accounts, allowed],
-    contract: 'PolicyVault',
-    functionName: 'setAllowlist',
-    network: chain.name,
-    nextCommand: `${CLI_COMMAND} policies get --policy-id ${policyId}`,
-    valueWei: 0n,
-    wallet: walletClient.account.address,
-  };
-  if (shouldPreview(options)) {
-    emitPreview(preview);
-    return;
-  }
-  const hash = await walletClient.writeContract({
-    address: buildPolicyVaultAddress(networkId),
-    abi: POLICY_VAULT_ABI,
-    functionName: 'setAllowlist',
-    args: [policyId, accounts, allowed],
-    chain,
-    account: walletClient.account,
-  });
-  await publicClient.waitForTransactionReceipt({ hash });
-  printTransactionResult(createTransactionResult({
-    action: 'Policy Allowlist Updated',
-    chain,
-    contract: 'PolicyVault',
-    entityLabel: 'Policy',
-    entityValue: policyId,
-    explorerUrl: buildExplorerUrl(chain, hash),
-    nextCommand: `${CLI_COMMAND} policies get --policy-id ${policyId}`,
-    secondaryLabel: 'Allowed',
-    secondaryValue: allowed,
-    txHash: hash,
-    wallet: walletClient.account.address,
-  }));
+  throw new CliError(
+    'ALLOWLIST_IMMUTABLE',
+    `Policy ${policyId} allowlists are immutable in the evaluator-array model.`,
+    `Create a new policy with --allowlist-enabled and --accounts, then deactivate the old policy with "${CLI_COMMAND} policies update --policy-id ${policyId} --active false".`,
+  );
 }
 
 async function purchasePolicyCommand(options) {
@@ -2592,12 +2757,18 @@ async function purchasePolicyCommand(options) {
     functionName: 'getPolicy',
     args: [policyId],
   });
+  const conditions = await readPolicyConditions({
+    publicClient,
+    networkId,
+    policyId,
+  });
   const recipient = readOption(options, ['recipient'], zeroAddress);
-  const buyerUaid = readOption(options, ['buyer-uaid'], '');
+  const runtimeInputs = buildConditionRuntimeInputs(conditions, options);
   const preview = {
     action: 'Purchase Policy',
     address: paymentModuleAddress,
-    args: [policyId, recipient === zeroAddress ? zeroAddress : getAddress(recipient), buyerUaid],
+    args: [policyId, recipient === zeroAddress ? zeroAddress : getAddress(recipient), runtimeInputs],
+    conditions,
     contract: 'PaymentModule',
     functionName: 'purchase',
     network: chain.name,
@@ -2613,7 +2784,7 @@ async function purchasePolicyCommand(options) {
     address: paymentModuleAddress,
     abi: PAYMENT_MODULE_ABI,
     functionName: 'purchase',
-    args: [policyId, recipient === zeroAddress ? zeroAddress : getAddress(recipient), buyerUaid],
+    args: [policyId, recipient === zeroAddress ? zeroAddress : getAddress(recipient), runtimeInputs],
     value: policy.price,
     chain,
     account: walletClient.account,
@@ -2926,11 +3097,19 @@ async function exportPolicyCommand(options) {
     functionName: 'getPolicy',
     args: [policyId],
   });
+  const conditions = await readPolicyConditions({
+    publicClient,
+    networkId,
+    policyId,
+  });
   const payload = {
     exportedAt: new Date().toISOString(),
     network: networkId,
     version: 1,
-    policy: serializePolicy(policyId, policy),
+    policy: {
+      ...serializePolicy(policyId, policy),
+      conditions,
+    },
   };
   const outputPath = resolveOutputPath(options);
   if (outputPath) {
@@ -2965,90 +3144,25 @@ async function importPolicyCommand(options) {
   const datasetId = parseBigIntValue(`${policy.datasetId}`, 'dataset id');
   const payout = getAddress(policy.payout || walletClient.account.address);
   const priceWei = parseBigIntValue(`${policy.priceWei ?? policy.price ?? 0}`, 'price');
-  const expiresAt = parseBigIntValue(`${policy.expiresAt ?? 0}`, 'expiresAt');
   const metadataHash = normalizeHash(policy.metadataHash, 'metadata hash');
-  const allowlistAccounts = policy.allowlistAccounts ? policy.allowlistAccounts.map((entry) => getAddress(entry)) : [];
-  const allowlistEnabled = Boolean(policy.allowlistEnabled);
-  const policyTypeLabel = decodePolicyTypeLabel(policy.policyType || zeroHash());
-  if (policyTypeLabel === 'unknown') {
-    throw new CliError(
-      'POLICY_IMPORT_UNSUPPORTED',
-      'Unable to infer policy type from import payload.',
-      'Use an exported policy file or set policy.policyType to the exported onchain value.',
-    );
-  }
-
-  if (policyTypeLabel === 'timebound') {
-    const args = [datasetId, payout, zeroAddress, priceWei, expiresAt, allowlistEnabled, metadataHash, allowlistAccounts];
-    const preview = {
-      action: 'Import Timebound Policy',
-      address: buildPolicyVaultAddress(networkId),
-      args,
-      contract: 'PolicyVault',
-      functionName: 'createTimeboundPolicy',
-      network: chain.name,
-      nextCommand: `${CLI_COMMAND} policies list --dataset-id ${datasetId}`,
-      valueWei: 0n,
-      wallet: walletClient.account.address,
-    };
-    if (shouldPreview(options)) {
-      emitPreview(preview);
-      return;
-    }
-    const hash = await walletClient.writeContract({
-      address: buildPolicyVaultAddress(networkId),
-      abi: POLICY_VAULT_ABI,
-      functionName: 'createTimeboundPolicy',
-      args,
-      chain,
-      account: walletClient.account,
-    });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    const event = await decodeIndexedEvent({
-      abi: POLICY_VAULT_ABI,
-      receipt,
-      eventName: 'PolicyCreated',
-    });
-    printTransactionResult(createTransactionResult({
-      action: 'Policy Imported',
-      chain,
-      contract: 'PolicyVault',
-      entityLabel: 'Policy',
-      entityValue: event.args.policyId,
-      explorerUrl: buildExplorerUrl(chain, hash),
-      nextCommand: `${CLI_COMMAND} policies get --policy-id ${event.args.policyId}`,
-      secondaryLabel: 'Dataset',
-      secondaryValue: event.args.datasetId,
-      txHash: hash,
-      wallet: walletClient.account.address,
-    }));
-    return;
-  }
-
-  const requiredBuyerUaidHash = policy.requiredBuyerUaid
-    ? buildHashFromText(policy.requiredBuyerUaid)
-    : normalizeHash(policy.requiredBuyerUaidHash, 'required buyer UAID hash');
-  const identityRegistry = getAddress(policy.identityRegistry || buildIdentityRegistryAddress(networkId));
-  const agentId = parseBigIntValue(`${policy.agentId}`, 'agent id');
+  const importedConditions = Array.isArray(policy.conditions) ? policy.conditions : [];
   const args = [
     datasetId,
     payout,
     zeroAddress,
     priceWei,
-    expiresAt,
-    allowlistEnabled,
     metadataHash,
-    requiredBuyerUaidHash,
-    identityRegistry,
-    agentId,
-    allowlistAccounts,
+    importedConditions.map((condition) => ({
+      evaluator: getAddress(condition.evaluator),
+      configData: condition.configData,
+    })),
   ];
   const preview = {
-    action: 'Import UAID Policy',
+    action: 'Import Policy',
     address: buildPolicyVaultAddress(networkId),
     args,
     contract: 'PolicyVault',
-    functionName: 'createUaidBoundPolicy',
+    functionName: 'createPolicyForDataset',
     network: chain.name,
     nextCommand: `${CLI_COMMAND} policies list --dataset-id ${datasetId}`,
     valueWei: 0n,
@@ -3061,7 +3175,7 @@ async function importPolicyCommand(options) {
   const hash = await walletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
-    functionName: 'createUaidBoundPolicy',
+    functionName: 'createPolicyForDataset',
     args,
     chain,
     account: walletClient.account,
@@ -3451,7 +3565,7 @@ async function updatePrices() {
         address: policyVaultAddress,
         abi: POLICY_VAULT_ABI,
         functionName: 'updatePolicy',
-        args: [i, newPrice, p.expiresAt, p.active, p.allowlistEnabled, p.metadataHash],
+        args: [i, newPrice, p.active, p.metadataHash],
       });
       console.log(`  tx: ${tx}`);
 
@@ -3527,6 +3641,30 @@ async function runUaidPolicyFlow({
   );
   const providerUaidHash = keccak256(toBytes(providerUaid));
   const requiredBuyerUaidHash = keccak256(toBytes(buyerUaid));
+  const timeRangeEvaluator = resolveConditionEvaluatorAddress(networkId, 'timeRangeCondition');
+  const uaidEvaluator = resolveConditionEvaluatorAddress(networkId, 'uaidOwnershipCondition');
+  const conditions = [
+    {
+      evaluator: timeRangeEvaluator,
+      configData: encodeAbiParameters(
+        parseAbiParameters('(uint64 notBefore,uint64 notAfter) value'),
+        [{ notBefore: 0n, notAfter: expiresAt }],
+      ),
+    },
+    {
+      evaluator: uaidEvaluator,
+      configData: encodeAbiParameters(
+        parseAbiParameters('(bytes32 requiredBuyerUaidHash,address identityRegistry,uint256 agentId) value'),
+        [
+          {
+            requiredBuyerUaidHash,
+            identityRegistry: identityRegistryAddress,
+            agentId: BigInt(agentId),
+          },
+        ],
+      ),
+    },
+  ];
 
   const datasetTx = await providerWalletClient.writeContract({
     address: policyVaultAddress,
@@ -3549,19 +3687,14 @@ async function runUaidPolicyFlow({
   const createPolicyTx = await providerWalletClient.writeContract({
     address: policyVaultAddress,
     abi: POLICY_VAULT_ABI,
-    functionName: 'createUaidBoundPolicy',
+    functionName: 'createPolicyForDataset',
     args: [
       BigInt(datasetId),
       providerWalletClient.account.address,
       '0x0000000000000000000000000000000000000000',
       priceWei,
-      expiresAt,
-      false,
       metadataHash,
-      requiredBuyerUaidHash,
-      identityRegistryAddress,
-      BigInt(agentId),
-      [],
+      conditions,
     ],
     chain,
     account: providerWalletClient.account,
@@ -3580,7 +3713,11 @@ async function runUaidPolicyFlow({
     address: paymentModuleAddress,
     abi: PAYMENT_MODULE_ABI,
     functionName: 'purchase',
-    args: [BigInt(policyId), agentWalletClient.account.address, buyerUaid],
+    args: [
+      BigInt(policyId),
+      agentWalletClient.account.address,
+      ['0x', encodeAbiParameters(parseAbiParameters('string value'), [buyerUaid])],
+    ],
     value: priceWei,
     chain,
     account: agentWalletClient.account,

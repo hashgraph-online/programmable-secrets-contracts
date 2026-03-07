@@ -83,6 +83,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
     mapping(uint256 => Dataset) private datasets;
     mapping(uint256 => uint256[]) private datasetPolicyIds;
     mapping(address => PolicyEvaluatorRegistration) private evaluatorRegistrations;
+    address[] private evaluatorRegistryIndex;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -215,6 +216,14 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         return _getEvaluatorRegistrationStorage(evaluator);
     }
 
+    function getPolicyEvaluatorCount() external view returns (uint256) {
+        return evaluatorRegistryIndex.length;
+    }
+
+    function getPolicyEvaluatorAt(uint256 index) external view returns (address evaluator) {
+        return evaluatorRegistryIndex[index];
+    }
+
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         newImplementation;
     }
@@ -275,6 +284,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             active: true,
             builtIn: builtIn
         });
+        evaluatorRegistryIndex.push(evaluator);
 
         if (!builtIn && feePaid != 0) {
             address feeRecipient = evaluatorFeeRecipient;
