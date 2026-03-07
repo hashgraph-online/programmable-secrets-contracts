@@ -33,7 +33,7 @@ jobs:
       ACCESS_RECEIPT_CONTRACT_PATH: src/AccessReceipt.sol:AccessReceipt
       PAYMENT_MODULE_CONTRACT_PATH: src/PaymentModule.sol:PaymentModule
       POLICY_VAULT_CONTRACT_PATH: src/PolicyVault.sol:PolicyVault
-      PROXY_CONTRACT_PATH: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy"
+      PROXY_CONTRACT_PATH: "lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy"
       COMPILER_VERSION: v0.8.24+commit.e11b9ed9
       OPTIMIZER_RUNS: "200"
       ARBITRUM_SEPOLIA_RPC_URL: ${{ secrets.ARBITRUM_SEPOLIA_RPC_URL }}
