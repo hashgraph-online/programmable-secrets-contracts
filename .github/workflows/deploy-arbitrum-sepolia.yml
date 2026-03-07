@@ -121,6 +121,7 @@ jobs:
             0x*) export ETH_PK="$deployer_key" ;;
             *) export ETH_PK="0x$deployer_key" ;;
           esac
+          echo "::add-mask::$ETH_PK"
           deployer_address="$(cast wallet address --private-key "$ETH_PK")"
           contract_owner="${CONTRACT_OWNER:-$deployer_address}"
           echo "ETH_PK=$ETH_PK" >> "$GITHUB_ENV"

@@ -23,10 +23,13 @@ import {
     InvalidPrice,
     NotDatasetProvider,
     NotPolicyProvider,
-    PolicyNotFound
+    PolicyNotFound,
+    TooManyPolicyConditions
 } from "./Errors.sol";
 
 contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, PolicyVaultEvents {
+    uint32 public constant MAX_POLICY_CONDITIONS = 16;
+
     struct PolicyConditionInput {
         address evaluator;
         bytes configData;
@@ -392,6 +395,9 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         PolicyConditionInput[] calldata conditions
     ) internal returns (bytes32 conditionsHash) {
         uint256 conditionCount = conditions.length;
+        if (conditionCount > MAX_POLICY_CONDITIONS) {
+            revert TooManyPolicyConditions(conditionCount, MAX_POLICY_CONDITIONS);
+        }
         bytes32[] memory conditionEntryHashes = new bytes32[](conditionCount);
 
         for (uint256 index = 0; index < conditionCount; ++index) {

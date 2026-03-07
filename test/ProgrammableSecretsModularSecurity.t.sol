@@ -7,14 +7,17 @@ import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {TimeRangeCondition} from "../src/TimeRangeCondition.sol";
 import {
+    AllowlistTooLarge,
     AgentIdentityNotFound,
     DatasetInactive,
+    EmptyAllowlist,
     InvalidAgentId,
     InvalidDatasetHashes,
     InvalidExpiry,
     InvalidIdentityRegistry,
     InvalidRequiredBuyerUaid,
-    PaymentFailed
+    PaymentFailed,
+    TooManyPolicyConditions
 } from "../src/Errors.sol";
 import {UaidOwnershipCondition} from "../src/UaidOwnershipCondition.sol";
 import {ProgrammableSecretsModularTestBase} from "./ProgrammableSecretsModularTestBase.sol";
@@ -181,6 +184,73 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidExpiry.selector);
         policyVault.createPolicyForDataset(datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+    }
+
+    function testCreatePolicyRejectsTooManyConditions() public {
+        uint256 datasetId = _registerDataset();
+        uint256 maxConditions = uint256(policyVault.MAX_POLICY_CONDITIONS());
+        PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](maxConditions + 1);
+
+        for (uint256 index = 0; index < conditions.length; ++index) {
+            conditions[index] = PolicyVault.PolicyConditionInput({
+                evaluator: address(timeRangeCondition),
+                configData: abi.encode(
+                    TimeRangeCondition.TimeRangeConfig({notBefore: 0, notAfter: uint64(block.timestamp + 1 days)})
+                )
+            });
+        }
+
+        vm.prank(PROVIDER);
+        (bool success, bytes memory revertData) = address(policyVault)
+            .call(
+                abi.encodeCall(
+                    PolicyVault.createPolicyForDataset,
+                    (datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions)
+                )
+            );
+
+        assertTrue(!success);
+        assertEqBytes32(bytes32(_revertSelector(revertData)), bytes32(TooManyPolicyConditions.selector));
+    }
+
+    function testCreatePolicyRejectsEmptyAllowlist() public {
+        uint256 datasetId = _registerDataset();
+        address[] memory allowlist = new address[](0);
+        PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
+        conditions[0] = PolicyVault.PolicyConditionInput({
+            evaluator: address(addressAllowlistCondition), configData: abi.encode(allowlist)
+        });
+
+        vm.prank(PROVIDER);
+        vm.expectRevert(EmptyAllowlist.selector);
+        policyVault.createPolicyForDataset(datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+    }
+
+    function testCreatePolicyRejectsOversizedAllowlist() public {
+        uint256 datasetId = _registerDataset();
+        uint256 maxEntries = addressAllowlistCondition.MAX_ALLOWLIST_ENTRIES();
+        address[] memory allowlist = new address[](maxEntries + 1);
+
+        for (uint256 index = 0; index < allowlist.length; ++index) {
+            allowlist[index] = address(uint160(index + 1));
+        }
+
+        PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
+        conditions[0] = PolicyVault.PolicyConditionInput({
+            evaluator: address(addressAllowlistCondition), configData: abi.encode(allowlist)
+        });
+
+        vm.prank(PROVIDER);
+        (bool success, bytes memory revertData) = address(policyVault)
+            .call(
+                abi.encodeCall(
+                    PolicyVault.createPolicyForDataset,
+                    (datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions)
+                )
+            );
+
+        assertTrue(!success);
+        assertEqBytes32(bytes32(_revertSelector(revertData)), bytes32(AllowlistTooLarge.selector));
     }
 
     function testPurchaseRevertsAtExactExpiryTimestamp() public {
@@ -377,5 +447,14 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         bytes[] memory runtimeInputs = _runtimeInputsForUaid(1, 0, REQUIRED_BUYER_UAID);
 
         _assertPolicyConditionFailure(OTHER_BUYER, policyId, OTHER_BUYER, runtimeInputs, 1 ether, 0);
+    }
+
+    function _revertSelector(bytes memory revertData) private pure returns (bytes4 selector) {
+        if (revertData.length < 4) {
+            return bytes4(0);
+        }
+        assembly {
+            selector := mload(add(revertData, 0x20))
+        }
     }
 }
