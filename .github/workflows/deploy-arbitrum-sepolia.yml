@@ -128,6 +128,40 @@ jobs:
           echo "CONTRACT_OWNER=$contract_owner" >> "$GITHUB_ENV"
           echo "IDENTITY_REGISTRY_ADDRESS=$IDENTITY_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
 
+      - name: Top up Arbitrum Sepolia deployer balance
+        if: ${{ inputs.network == 'arbitrum-sepolia' }}
+        run: |
+          minimum_balance_wei="200000000000000"
+          top_up_value_wei="1000000000000000"
+          sepolia_rpc_url="https://ethereum-sepolia-rpc.publicnode.com"
+          arbitrum_sepolia_inbox="0xA6B184758938ed3a5c0137d430c4c8F31bCbEc9e"
+          current_balance_wei="$(cast balance "$DEPLOYER_ADDRESS" --rpc-url "$RPC_URL")"
+
+          if [ "$current_balance_wei" -ge "$minimum_balance_wei" ]; then
+            echo "Arbitrum Sepolia balance is sufficient: $current_balance_wei wei"
+            exit 0
+          fi
+
+          echo "Low Arbitrum Sepolia balance detected: $current_balance_wei wei"
+          echo "Depositing $top_up_value_wei wei from Sepolia L1 via Inbox $arbitrum_sepolia_inbox"
+          cast send "$arbitrum_sepolia_inbox" "depositEth()" \
+            --value "$top_up_value_wei" \
+            --rpc-url "$sepolia_rpc_url" \
+            --private-key "$ETH_PK"
+
+          for attempt in $(seq 1 30); do
+            sleep 20
+            current_balance_wei="$(cast balance "$DEPLOYER_ADDRESS" --rpc-url "$RPC_URL")"
+            echo "Arbitrum Sepolia balance check $attempt: $current_balance_wei wei"
+            if [ "$current_balance_wei" -ge "$minimum_balance_wei" ]; then
+              echo "Arbitrum Sepolia balance topped up successfully."
+              exit 0
+            fi
+          done
+
+          echo "Arbitrum Sepolia balance remained below $minimum_balance_wei wei after L1 deposit." >&2
+          exit 1
+
       - name: Deploy contract stack
         run: |
           forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast -vvv
