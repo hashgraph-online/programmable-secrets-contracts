@@ -29,6 +29,9 @@ contract PaymentModule is
     UpgradeableReentrancyGuard,
     PaymentModuleEvents
 {
+    uint16 public constant PROTOCOL_FEE_BPS = 300;
+    uint16 internal constant BPS_DENOMINATOR = 10_000;
+
     PolicyVault public policyVault;
     AccessReceipt public accessReceipt;
 
@@ -92,10 +95,7 @@ contract PaymentModule is
         if (payout == address(0)) {
             revert InvalidPayoutAddress();
         }
-        (bool success,) = payout.call{value: msg.value}("");
-        if (!success) {
-            revert PaymentFailed();
-        }
+        _settlePayment(payout, price);
 
         uint64 purchasedAt = uint64(block.timestamp);
 
@@ -178,6 +178,30 @@ contract PaymentModule is
         }
         accessReceipt = AccessReceipt(accessReceiptAddress);
         emit AccessReceiptUpdated(accessReceiptAddress);
+    }
+
+    function _settlePayment(address payout, uint96 price) internal {
+        address protocolFeeRecipient = owner();
+        uint256 protocolFee = (uint256(price) * PROTOCOL_FEE_BPS) / BPS_DENOMINATOR;
+
+        if (protocolFee == 0 || protocolFeeRecipient == payout) {
+            (bool success,) = payout.call{value: uint256(price)}("");
+            if (!success) {
+                revert PaymentFailed();
+            }
+            return;
+        }
+
+        uint256 providerProceeds = uint256(price) - protocolFee;
+        (bool protocolFeeSuccess,) = protocolFeeRecipient.call{value: protocolFee}("");
+        if (!protocolFeeSuccess) {
+            revert PaymentFailed();
+        }
+
+        (bool payoutSuccess,) = payout.call{value: providerProceeds}("");
+        if (!payoutSuccess) {
+            revert PaymentFailed();
+        }
     }
 
     function _validatePurchaseConditions(

@@ -180,6 +180,8 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
     function testPurchaseMintsReceiptAndEmitsAccessGranted() public {
         uint256 policyId = _createDatasetPolicy(1 ether, 0, false);
         uint256 payoutBalanceBefore = PAYOUT.balance;
+        uint256 ownerBalanceBefore = UPGRADE_OWNER.balance;
+        uint256 protocolFee = (uint256(1 ether) * 300) / 10_000;
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(0);
 
         vm.recordLogs();
@@ -190,7 +192,8 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         AccessReceipt.Receipt memory receipt = accessReceipt.getReceipt(receiptTokenId);
         PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
 
-        assertEqUint(PAYOUT.balance, payoutBalanceBefore + uint256(1 ether));
+        assertEqUint(PAYOUT.balance, payoutBalanceBefore + uint256(1 ether) - protocolFee);
+        assertEqUint(UPGRADE_OWNER.balance, ownerBalanceBefore + protocolFee);
         assertEqUint(receipt.policyId, policyId);
         assertEqUint(receipt.datasetId, policy.datasetId);
         assertEqAddress(receipt.buyer, BUYER);
@@ -203,6 +206,20 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         assertEqBool(paymentModule.hasAccess(policyId, BUYER), true);
         assertEqBool(paymentModule.hasDatasetAccess(policy.datasetId, BUYER), true);
         assertEqUint(accessReceipt.receiptOfPolicyAndBuyer(policyId, BUYER), receiptTokenId);
+    }
+
+    function testPurchaseRoundsProtocolFeeDownInFavorOfProvider() public {
+        uint256 policyId = _createDatasetPolicy(101, 0, false);
+        uint256 payoutBalanceBefore = PAYOUT.balance;
+        uint256 ownerBalanceBefore = UPGRADE_OWNER.balance;
+        uint256 protocolFee = (uint256(101) * 300) / 10_000;
+        bytes[] memory runtimeInputs = _emptyRuntimeInputs(0);
+
+        vm.prank(BUYER);
+        paymentModule.purchase{value: 101}(policyId, RECIPIENT, runtimeInputs);
+
+        assertEqUint(PAYOUT.balance, payoutBalanceBefore + 101 - protocolFee);
+        assertEqUint(UPGRADE_OWNER.balance, ownerBalanceBefore + protocolFee);
     }
 
     function testPurchaseRejectsInactivePolicy() public {
