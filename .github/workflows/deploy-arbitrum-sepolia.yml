@@ -296,6 +296,7 @@ jobs:
 
       - name: Verify TimeRangeCondition on Sourcify
         if: ${{ env.ENABLE_SOURCIFY == 'true' }}
+        continue-on-error: true
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
@@ -308,6 +309,7 @@ jobs:
 
       - name: Verify UaidOwnershipCondition on Sourcify
         if: ${{ env.ENABLE_SOURCIFY == 'true' }}
+        continue-on-error: true
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
@@ -320,6 +322,7 @@ jobs:
 
       - name: Verify AddressAllowlistCondition on Sourcify
         if: ${{ env.ENABLE_SOURCIFY == 'true' }}
+        continue-on-error: true
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
@@ -332,6 +335,7 @@ jobs:
 
       - name: Verify PolicyVault implementation on Sourcify
         if: ${{ env.ENABLE_SOURCIFY == 'true' }}
+        continue-on-error: true
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
@@ -344,6 +348,7 @@ jobs:
 
       - name: Verify PaymentModule implementation on Sourcify
         if: ${{ env.ENABLE_SOURCIFY == 'true' }}
+        continue-on-error: true
         run: >
           forge verify-contract
           --chain-id "$CHAIN_ID"
