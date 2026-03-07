@@ -4,43 +4,32 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {IIdentityRegistry} from "./IIdentityRegistry.sol";
+import {IPolicyCondition} from "./IPolicyCondition.sol";
 import {PolicyVaultEvents} from "./Events.sol";
 import {
-    AgentIdentityNotFound,
     DatasetInactive,
     DatasetNotFound,
-    InvalidAgentId,
-    InvalidExpiry,
-    InvalidIdentityRegistry,
+    EvaluatorAlreadyRegistered,
+    EvaluatorInactive,
+    EvaluatorNotRegistered,
+    EvaluatorRegistrationPayoutFailed,
+    InvalidConditionEvaluator,
     InvalidDatasetHashes,
+    InvalidEvaluatorMetadataHash,
+    InvalidEvaluatorRegistrationFee,
+    InvalidFeeRecipient,
     InvalidPaymentToken,
     InvalidPolicyHashes,
-    InvalidPolicyType,
     InvalidPrice,
-    InvalidRequiredBuyerUaid,
     NotDatasetProvider,
     NotPolicyProvider,
     PolicyNotFound
 } from "./Errors.sol";
 
 contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, PolicyVaultEvents {
-    bytes32 public constant POLICY_TYPE_TIMEBOUND = keccak256("TIMEBOUND_V1");
-    bytes32 public constant POLICY_TYPE_UAID_ERC8004 = keccak256("UAID_ERC8004_V1");
-
-    struct CreatePolicyConfig {
-        address provider;
-        uint256 datasetId;
-        address payout;
-        address paymentToken;
-        uint96 price;
-        uint64 expiresAt;
-        bool allowlistEnabled;
-        bytes32 metadataHash;
-        bytes32 policyType;
-        bytes32 requiredBuyerUaidHash;
-        address identityRegistry;
-        uint256 agentId;
+    struct PolicyConditionInput {
+        address evaluator;
+        bytes configData;
     }
 
     struct Policy {
@@ -49,7 +38,6 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         address paymentToken;
         uint96 price;
         uint64 createdAt;
-        uint64 expiresAt;
         bool active;
         bool allowlistEnabled;
         bytes32 ciphertextHash;
@@ -57,10 +45,8 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         bytes32 metadataHash;
         bytes32 providerUaidHash;
         uint256 datasetId;
-        bytes32 policyType;
-        bytes32 requiredBuyerUaidHash;
-        address identityRegistry;
-        uint256 agentId;
+        bytes32 conditionsHash;
+        uint32 conditionCount;
     }
 
     struct Dataset {
@@ -73,12 +59,30 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         bytes32 providerUaidHash;
     }
 
+    struct StoredPolicyCondition {
+        address evaluator;
+        bytes configData;
+        bytes32 configHash;
+    }
+
+    struct PolicyEvaluatorRegistration {
+        address registrant;
+        bytes32 metadataHash;
+        uint64 registeredAt;
+        bool active;
+        bool builtIn;
+    }
+
+    uint256 public evaluatorRegistrationFee;
+    address public evaluatorFeeRecipient;
+
     uint256 public policyCount;
     mapping(uint256 => Policy) private policies;
-    mapping(uint256 => mapping(address => bool)) private allowlistedAccounts;
+    mapping(uint256 => StoredPolicyCondition[]) private policyConditions;
     uint256 public datasetCount;
     mapping(uint256 => Dataset) private datasets;
     mapping(uint256 => uint256[]) private datasetPolicyIds;
+    mapping(address => PolicyEvaluatorRegistration) private evaluatorRegistrations;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -88,6 +92,35 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
     function initialize(address initialOwner) external initializer {
         __Ownable_init(initialOwner);
         __Ownable2Step_init();
+        evaluatorRegistrationFee = 0.05 ether;
+        evaluatorFeeRecipient = initialOwner;
+    }
+
+    function registerPolicyEvaluator(address evaluator, bytes32 metadataHash) external payable {
+        _registerPolicyEvaluator(evaluator, msg.sender, metadataHash, msg.value, false);
+    }
+
+    function registerBuiltInEvaluator(address evaluator, bytes32 metadataHash) external onlyOwner {
+        _registerPolicyEvaluator(evaluator, msg.sender, metadataHash, 0, true);
+    }
+
+    function setPolicyEvaluatorActive(address evaluator, bool active) external onlyOwner {
+        PolicyEvaluatorRegistration storage registration = _getEvaluatorRegistrationStorage(evaluator);
+        registration.active = active;
+        emit PolicyEvaluatorStatusUpdated(evaluator, active);
+    }
+
+    function setEvaluatorRegistrationFee(uint256 newFee) external onlyOwner {
+        evaluatorRegistrationFee = newFee;
+        emit PolicyEvaluatorFeeUpdated(newFee);
+    }
+
+    function setEvaluatorFeeRecipient(address newFeeRecipient) external onlyOwner {
+        if (newFeeRecipient == address(0)) {
+            revert InvalidFeeRecipient();
+        }
+        evaluatorFeeRecipient = newFeeRecipient;
+        emit PolicyEvaluatorFeeRecipientUpdated(newFeeRecipient);
     }
 
     function registerDataset(
@@ -109,99 +142,18 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         emit DatasetStatusUpdated(datasetId, active);
     }
 
-    function createTimeboundPolicy(
-        uint256 datasetId,
-        address payout,
-        address paymentToken,
-        uint96 price,
-        uint64 expiresAt,
-        bool allowlistEnabled,
-        bytes32 metadataHash,
-        address[] calldata allowlistAccounts
-    ) external returns (uint256 policyId) {
-        CreatePolicyConfig memory config = CreatePolicyConfig({
-            provider: msg.sender,
-            datasetId: datasetId,
-            payout: payout,
-            paymentToken: paymentToken,
-            price: price,
-            expiresAt: expiresAt,
-            allowlistEnabled: allowlistEnabled,
-            metadataHash: metadataHash,
-            policyType: POLICY_TYPE_TIMEBOUND,
-            requiredBuyerUaidHash: bytes32(0),
-            identityRegistry: address(0),
-            agentId: 0
-        });
-        policyId = _createPolicyForDataset(config, allowlistAccounts);
-    }
-
-    function createUaidBoundPolicy(
-        uint256 datasetId,
-        address payout,
-        address paymentToken,
-        uint96 price,
-        uint64 expiresAt,
-        bool allowlistEnabled,
-        bytes32 metadataHash,
-        bytes32 requiredBuyerUaidHash,
-        address identityRegistry,
-        uint256 agentId,
-        address[] calldata allowlistAccounts
-    ) external returns (uint256 policyId) {
-        CreatePolicyConfig memory config = CreatePolicyConfig({
-            provider: msg.sender,
-            datasetId: datasetId,
-            payout: payout,
-            paymentToken: paymentToken,
-            price: price,
-            expiresAt: expiresAt,
-            allowlistEnabled: allowlistEnabled,
-            metadataHash: metadataHash,
-            policyType: POLICY_TYPE_UAID_ERC8004,
-            requiredBuyerUaidHash: requiredBuyerUaidHash,
-            identityRegistry: identityRegistry,
-            agentId: agentId
-        });
-        policyId = _createPolicyForDataset(config, allowlistAccounts);
-    }
-
     function createPolicyForDataset(
         uint256 datasetId,
-        bytes32 policyType,
         address payout,
         address paymentToken,
         uint96 price,
-        uint64 expiresAt,
-        bool allowlistEnabled,
         bytes32 metadataHash,
-        address[] calldata allowlistAccounts
+        PolicyConditionInput[] calldata conditions
     ) external returns (uint256 policyId) {
-        CreatePolicyConfig memory config = CreatePolicyConfig({
-            provider: msg.sender,
-            datasetId: datasetId,
-            payout: payout,
-            paymentToken: paymentToken,
-            price: price,
-            expiresAt: expiresAt,
-            allowlistEnabled: allowlistEnabled,
-            metadataHash: metadataHash,
-            policyType: policyType,
-            requiredBuyerUaidHash: bytes32(0),
-            identityRegistry: address(0),
-            agentId: 0
-        });
-        policyId = _createPolicyForDataset(config, allowlistAccounts);
+        policyId = _createPolicyForDataset(msg.sender, datasetId, payout, paymentToken, price, metadataHash, conditions);
     }
 
-    function updatePolicy(
-        uint256 policyId,
-        uint96 newPrice,
-        uint64 newExpiresAt,
-        bool active,
-        bool allowlistEnabled,
-        bytes32 newMetadataHash
-    ) external {
+    function updatePolicy(uint256 policyId, uint96 newPrice, bool active, bytes32 newMetadataHash) external {
         Policy storage policy = _getPolicyStorage(policyId);
 
         if (policy.provider != msg.sender) {
@@ -210,29 +162,15 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         if (newPrice == 0) {
             revert InvalidPrice();
         }
-        _validateExpiry(newExpiresAt);
         if (newMetadataHash == bytes32(0)) {
             revert InvalidPolicyHashes();
         }
 
         policy.price = newPrice;
-        policy.expiresAt = newExpiresAt;
         policy.active = active;
-        policy.allowlistEnabled = allowlistEnabled;
-        _validatePolicyMetadataHash(newMetadataHash);
         policy.metadataHash = newMetadataHash;
 
-        emit PolicyUpdated(
-            policyId, policy.datasetId, newPrice, newExpiresAt, active, allowlistEnabled, newMetadataHash
-        );
-    }
-
-    function setAllowlist(uint256 policyId, address[] calldata accounts, bool allowed) external {
-        Policy storage policy = _getPolicyStorage(policyId);
-        if (policy.provider != msg.sender) {
-            revert NotPolicyProvider();
-        }
-        _setAllowlist(policyId, accounts, allowed);
+        emit PolicyUpdated(policyId, policy.datasetId, newPrice, active, newMetadataHash);
     }
 
     function getPolicy(uint256 policyId) external view returns (Policy memory) {
@@ -258,16 +196,23 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         return datasetPolicyIds[datasetId];
     }
 
-    function isAllowlisted(uint256 policyId, address account) external view returns (bool) {
-        Policy storage policy = _getPolicyStorage(policyId);
-        if (!policy.allowlistEnabled) {
-            return true;
-        }
-        return allowlistedAccounts[policyId][account];
+    function getPolicyConditionCount(uint256 policyId) external view returns (uint256) {
+        _getPolicyStorage(policyId);
+        return policyConditions[policyId].length;
     }
 
-    function isSupportedPolicyType(bytes32 policyType) public pure returns (bool) {
-        return policyType == POLICY_TYPE_TIMEBOUND || policyType == POLICY_TYPE_UAID_ERC8004;
+    function getPolicyCondition(uint256 policyId, uint256 index)
+        external
+        view
+        returns (address evaluator, bytes memory configData, bytes32 configHash)
+    {
+        _getPolicyStorage(policyId);
+        StoredPolicyCondition storage condition = policyConditions[policyId][index];
+        return (condition.evaluator, condition.configData, condition.configHash);
+    }
+
+    function getPolicyEvaluator(address evaluator) external view returns (PolicyEvaluatorRegistration memory) {
+        return _getEvaluatorRegistrationStorage(evaluator);
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
@@ -286,6 +231,63 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         if (dataset.provider == address(0)) {
             revert DatasetNotFound();
         }
+    }
+
+    function _getEvaluatorRegistrationStorage(address evaluator)
+        internal
+        view
+        returns (PolicyEvaluatorRegistration storage registration)
+    {
+        registration = evaluatorRegistrations[evaluator];
+        if (registration.registrant == address(0)) {
+            revert EvaluatorNotRegistered();
+        }
+    }
+
+    function _registerPolicyEvaluator(
+        address evaluator,
+        address registrant,
+        bytes32 metadataHash,
+        uint256 feePaid,
+        bool builtIn
+    ) internal {
+        if (evaluator == address(0) || evaluator.code.length == 0) {
+            revert InvalidConditionEvaluator();
+        }
+        if (metadataHash == bytes32(0)) {
+            revert InvalidEvaluatorMetadataHash();
+        }
+        if (evaluatorRegistrations[evaluator].registrant != address(0)) {
+            revert EvaluatorAlreadyRegistered();
+        }
+        if (builtIn) {
+            if (feePaid != 0) {
+                revert InvalidEvaluatorRegistrationFee(0, feePaid);
+            }
+        } else if (feePaid != evaluatorRegistrationFee) {
+            revert InvalidEvaluatorRegistrationFee(evaluatorRegistrationFee, feePaid);
+        }
+
+        evaluatorRegistrations[evaluator] = PolicyEvaluatorRegistration({
+            registrant: registrant,
+            metadataHash: metadataHash,
+            registeredAt: uint64(block.timestamp),
+            active: true,
+            builtIn: builtIn
+        });
+
+        if (!builtIn && feePaid != 0) {
+            address feeRecipient = evaluatorFeeRecipient;
+            if (feeRecipient == address(0)) {
+                revert InvalidFeeRecipient();
+            }
+            (bool success,) = feeRecipient.call{value: feePaid}("");
+            if (!success) {
+                revert EvaluatorRegistrationPayoutFailed();
+            }
+        }
+
+        emit PolicyEvaluatorRegistered(evaluator, registrant, metadataHash, feePaid, builtIn);
     }
 
     function _registerDataset(
@@ -311,87 +313,99 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         emit DatasetRegistered(datasetId, provider, ciphertextHash, keyCommitment, metadataHash, providerUaidHash);
     }
 
-    function _createPolicyForDataset(CreatePolicyConfig memory config, address[] calldata allowlistAccounts)
-        internal
-        returns (uint256 policyId)
-    {
-        Dataset storage dataset = _getDatasetStorage(config.datasetId);
+    function _createPolicyForDataset(
+        address provider,
+        uint256 datasetId,
+        address payout,
+        address paymentToken,
+        uint96 price,
+        bytes32 metadataHash,
+        PolicyConditionInput[] calldata conditions
+    ) internal returns (uint256 policyId) {
+        Dataset storage dataset = _getDatasetStorage(datasetId);
+        policyId = policyCount + 1;
 
-        if (dataset.provider != config.provider) {
+        if (dataset.provider != provider) {
             revert NotDatasetProvider();
         }
         if (!dataset.active) {
             revert DatasetInactive();
         }
-        if (!isSupportedPolicyType(config.policyType)) {
-            revert InvalidPolicyType();
-        }
-        if (config.paymentToken != address(0)) {
+        if (paymentToken != address(0)) {
             revert InvalidPaymentToken();
         }
-        if (config.price == 0) {
+        if (price == 0) {
             revert InvalidPrice();
         }
-        _validateExpiry(config.expiresAt);
-        _validatePolicyMetadataHash(config.metadataHash);
-        _validatePolicyRequirements(config);
+        _validatePolicyMetadataHash(metadataHash);
 
-        policyId = ++policyCount;
+        bytes32 conditionsHash = _storePolicyConditions(provider, datasetId, policyId, conditions);
+        policyCount = policyId;
 
-        address normalizedPayout = config.payout == address(0) ? config.provider : config.payout;
+        address normalizedPayout = payout == address(0) ? provider : payout;
         policies[policyId] = Policy({
-            provider: config.provider,
+            provider: provider,
             payout: normalizedPayout,
-            paymentToken: config.paymentToken,
-            price: config.price,
+            paymentToken: paymentToken,
+            price: price,
             createdAt: uint64(block.timestamp),
-            expiresAt: config.expiresAt,
             active: true,
-            allowlistEnabled: config.allowlistEnabled,
+            allowlistEnabled: false,
             ciphertextHash: dataset.ciphertextHash,
             keyCommitment: dataset.keyCommitment,
-            metadataHash: config.metadataHash,
+            metadataHash: metadataHash,
             providerUaidHash: dataset.providerUaidHash,
-            datasetId: config.datasetId,
-            policyType: config.policyType,
-            requiredBuyerUaidHash: config.requiredBuyerUaidHash,
-            identityRegistry: config.identityRegistry,
-            agentId: config.agentId
+            datasetId: datasetId,
+            conditionsHash: conditionsHash,
+            conditionCount: uint32(conditions.length)
         });
-        datasetPolicyIds[config.datasetId].push(policyId);
-
-        if (allowlistAccounts.length > 0) {
-            _setAllowlist(policyId, allowlistAccounts, true);
-        }
+        datasetPolicyIds[datasetId].push(policyId);
 
         emit PolicyCreated(
             policyId,
-            config.datasetId,
-            config.provider,
+            datasetId,
+            provider,
             normalizedPayout,
-            config.paymentToken,
-            config.policyType,
-            config.price,
-            config.expiresAt,
-            config.allowlistEnabled,
-            config.metadataHash,
+            paymentToken,
+            price,
+            conditionsHash,
+            uint32(conditions.length),
+            metadataHash,
             dataset.metadataHash
         );
     }
 
-    function _setAllowlist(uint256 policyId, address[] calldata accounts, bool allowed) internal {
-        uint256 accountsLength = accounts.length;
-        for (uint256 index = 0; index < accountsLength; ++index) {
-            address account = accounts[index];
-            allowlistedAccounts[policyId][account] = allowed;
-            emit AllowlistUpdated(policyId, account, allowed);
-        }
-    }
+    function _storePolicyConditions(
+        address provider,
+        uint256 datasetId,
+        uint256 nextPolicyId,
+        PolicyConditionInput[] calldata conditions
+    ) internal returns (bytes32 conditionsHash) {
+        uint256 conditionCount = conditions.length;
+        bytes32[] memory conditionEntryHashes = new bytes32[](conditionCount);
 
-    function _validateExpiry(uint64 expiresAt) internal view {
-        if (expiresAt != 0 && expiresAt <= block.timestamp) {
-            revert InvalidExpiry();
+        for (uint256 index = 0; index < conditionCount; ++index) {
+            PolicyConditionInput calldata condition = conditions[index];
+            if (condition.evaluator == address(0)) {
+                revert InvalidConditionEvaluator();
+            }
+            PolicyEvaluatorRegistration storage registration = _getEvaluatorRegistrationStorage(condition.evaluator);
+            if (!registration.active) {
+                revert EvaluatorInactive();
+            }
+
+            IPolicyCondition(condition.evaluator)
+                .validateCondition(address(this), provider, datasetId, condition.configData);
+
+            bytes32 configHash = keccak256(condition.configData);
+            policyConditions[nextPolicyId].push(
+                StoredPolicyCondition({
+                    evaluator: condition.evaluator, configData: condition.configData, configHash: configHash
+                })
+            );
+            conditionEntryHashes[index] = keccak256(abi.encode(condition.evaluator, configHash));
         }
+        conditionsHash = keccak256(abi.encode(conditionEntryHashes));
     }
 
     function _validateDatasetHashes(
@@ -411,28 +425,6 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
     function _validatePolicyMetadataHash(bytes32 metadataHash) internal pure {
         if (metadataHash == bytes32(0)) {
             revert InvalidPolicyHashes();
-        }
-    }
-
-    function _validatePolicyRequirements(CreatePolicyConfig memory config) internal view {
-        if (config.policyType != POLICY_TYPE_UAID_ERC8004) {
-            return;
-        }
-        if (config.requiredBuyerUaidHash == bytes32(0)) {
-            revert InvalidRequiredBuyerUaid();
-        }
-        if (config.identityRegistry == address(0)) {
-            revert InvalidIdentityRegistry();
-        }
-        if (config.agentId == 0) {
-            revert InvalidAgentId();
-        }
-        try IIdentityRegistry(config.identityRegistry).ownerOf(config.agentId) returns (address agentOwner) {
-            if (agentOwner == address(0)) {
-                revert AgentIdentityNotFound();
-            }
-        } catch {
-            revert AgentIdentityNotFound();
         }
     }
 }

@@ -4,8 +4,11 @@ pragma solidity ^0.8.24;
 import {Script} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {AccessReceipt} from "../src/AccessReceipt.sol";
+import {AddressAllowlistCondition} from "../src/AddressAllowlistCondition.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
+import {TimeRangeCondition} from "../src/TimeRangeCondition.sol";
+import {UaidOwnershipCondition} from "../src/UaidOwnershipCondition.sol";
 
 contract Deploy is Script {
     bytes32 internal constant DEFAULT_POLICY_VAULT_IMPLEMENTATION_SALT =
@@ -43,8 +46,11 @@ contract Deploy is Script {
         address policyVaultImplementation;
         PolicyVault deployedPolicyVault;
         AccessReceipt deployedAccessReceipt;
+        AddressAllowlistCondition deployedAddressAllowlistCondition;
         address paymentModuleImplementation;
         PaymentModule deployedPaymentModule;
+        TimeRangeCondition deployedTimeRangeCondition;
+        UaidOwnershipCondition deployedUaidOwnershipCondition;
 
         if (useCreate2) {
             policyVaultImplementation = address(new PolicyVault{salt: policyVaultImplementationSalt}());
@@ -56,6 +62,9 @@ contract Deploy is Script {
                 )
             );
             deployedAccessReceipt = new AccessReceipt{salt: accessReceiptSalt}(deployer);
+            deployedTimeRangeCondition = new TimeRangeCondition();
+            deployedUaidOwnershipCondition = new UaidOwnershipCondition();
+            deployedAddressAllowlistCondition = new AddressAllowlistCondition();
             paymentModuleImplementation = address(new PaymentModule{salt: paymentModuleImplementationSalt}());
             deployedPaymentModule = PaymentModule(
                 address(
@@ -74,6 +83,9 @@ contract Deploy is Script {
                 address(new ERC1967Proxy(policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))))
             );
             deployedAccessReceipt = new AccessReceipt(deployer);
+            deployedTimeRangeCondition = new TimeRangeCondition();
+            deployedUaidOwnershipCondition = new UaidOwnershipCondition();
+            deployedAddressAllowlistCondition = new AddressAllowlistCondition();
             paymentModuleImplementation = address(new PaymentModule());
             deployedPaymentModule = PaymentModule(
                 address(
@@ -88,6 +100,15 @@ contract Deploy is Script {
             );
         }
         deployedAccessReceipt.setPaymentModule(address(deployedPaymentModule));
+        deployedPolicyVault.registerBuiltInEvaluator(
+            address(deployedTimeRangeCondition), keccak256("builtin:time-range")
+        );
+        deployedPolicyVault.registerBuiltInEvaluator(
+            address(deployedUaidOwnershipCondition), keccak256("builtin:uaid-ownership")
+        );
+        deployedPolicyVault.registerBuiltInEvaluator(
+            address(deployedAddressAllowlistCondition), keccak256("builtin:address-allowlist")
+        );
 
         if (requestedOwner != deployer) {
             deployedPolicyVault.transferOwnership(requestedOwner);

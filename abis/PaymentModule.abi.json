@@ -175,9 +175,9 @@
         "internalType": "address"
       },
       {
-        "name": "buyerUaid",
-        "type": "string",
-        "internalType": "string"
+        "name": "conditionRuntimeInputs",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
       }
     ],
     "outputs": [
@@ -452,26 +452,6 @@
   },
   {
     "type": "error",
-    "name": "BuyerDoesNotOwnRequiredAgent",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BuyerNotAllowlisted",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BuyerUaidMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BuyerUaidRequired",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "DatasetInactive",
     "inputs": []
   },
@@ -498,6 +478,11 @@
   },
   {
     "type": "error",
+    "name": "InvalidConditionInputCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
   },
@@ -514,11 +499,6 @@
   {
     "type": "error",
     "name": "InvalidPayoutAddress",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidPolicyType",
     "inputs": []
   },
   {
@@ -560,8 +540,14 @@
   },
   {
     "type": "error",
-    "name": "PolicyExpired",
-    "inputs": []
+    "name": "PolicyConditionFailed",
+    "inputs": [
+      {
+        "name": "conditionIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

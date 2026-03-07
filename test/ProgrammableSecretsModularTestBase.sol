@@ -4,9 +4,12 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {AgentIdentityRegistry} from "../src/AgentIdentityRegistry.sol";
+import {AddressAllowlistCondition} from "../src/AddressAllowlistCondition.sol";
 import {PolicyVault} from "../src/PolicyVault.sol";
 import {PaymentModule} from "../src/PaymentModule.sol";
 import {AccessReceipt} from "../src/AccessReceipt.sol";
+import {TimeRangeCondition} from "../src/TimeRangeCondition.sol";
+import {UaidOwnershipCondition} from "../src/UaidOwnershipCondition.sol";
 
 abstract contract ProgrammableSecretsModularTestBase is Test {
     address internal constant UPGRADE_OWNER = address(0xABCD);
@@ -21,6 +24,9 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
     bytes32 internal constant METADATA_HASH = keccak256("dataset-metadata");
     bytes32 internal constant POLICY_METADATA_HASH = keccak256("policy-metadata");
     bytes32 internal constant PROVIDER_UAID_HASH = keccak256("uaid");
+    bytes32 internal constant TIME_RANGE_EVALUATOR_METADATA_HASH = keccak256("time-range-evaluator");
+    bytes32 internal constant UAID_OWNERSHIP_EVALUATOR_METADATA_HASH = keccak256("uaid-ownership-evaluator");
+    bytes32 internal constant ADDRESS_ALLOWLIST_EVALUATOR_METADATA_HASH = keccak256("address-allowlist-evaluator");
     string internal constant REQUIRED_BUYER_UAID =
         "uaid:aid:buyer-agent;uid=46630:1;registry=erc-8004;proto=erc-8004;nativeId=46630:1";
 
@@ -28,6 +34,9 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
     PaymentModule internal paymentModule;
     AccessReceipt internal accessReceipt;
     AgentIdentityRegistry internal agentIdentityRegistry;
+    TimeRangeCondition internal timeRangeCondition;
+    UaidOwnershipCondition internal uaidOwnershipCondition;
+    AddressAllowlistCondition internal addressAllowlistCondition;
     PolicyVault internal policyVaultImplementation;
     PaymentModule internal paymentModuleImplementation;
     ERC1967Proxy internal policyVaultProxy;
@@ -42,6 +51,18 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
 
         accessReceipt = new AccessReceipt(UPGRADE_OWNER);
         agentIdentityRegistry = new AgentIdentityRegistry(UPGRADE_OWNER);
+        timeRangeCondition = new TimeRangeCondition();
+        uaidOwnershipCondition = new UaidOwnershipCondition();
+        addressAllowlistCondition = new AddressAllowlistCondition();
+
+        vm.prank(UPGRADE_OWNER);
+        policyVault.registerBuiltInEvaluator(address(timeRangeCondition), TIME_RANGE_EVALUATOR_METADATA_HASH);
+        vm.prank(UPGRADE_OWNER);
+        policyVault.registerBuiltInEvaluator(address(uaidOwnershipCondition), UAID_OWNERSHIP_EVALUATOR_METADATA_HASH);
+        vm.prank(UPGRADE_OWNER);
+        policyVault.registerBuiltInEvaluator(
+            address(addressAllowlistCondition), ADDRESS_ALLOWLIST_EVALUATOR_METADATA_HASH
+        );
 
         paymentModuleImplementation = new PaymentModule();
         paymentModuleProxy = new ERC1967Proxy(
@@ -74,11 +95,11 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         internal
         returns (uint256 policyId)
     {
-        address[] memory emptyAllowlist = new address[](0);
+        PolicyVault.PolicyConditionInput[] memory conditions =
+            _buildConditions(expiresAt, allowlistEnabled, address(0), REQUIRED_BUYER_UAID, 0);
         vm.prank(PROVIDER);
-        policyId = policyVault.createTimeboundPolicy(
-            datasetId, PAYOUT, address(0), price, expiresAt, allowlistEnabled, POLICY_METADATA_HASH, emptyAllowlist
-        );
+        policyId =
+            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), price, POLICY_METADATA_HASH, conditions);
     }
 
     function _createAllowlistedDatasetPolicy(address allowlistedBuyer, uint96 price, uint64 expiresAt)
@@ -86,12 +107,11 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         returns (uint256 policyId)
     {
         uint256 datasetId = _registerDataset();
-        address[] memory allowlist = new address[](1);
-        allowlist[0] = allowlistedBuyer;
+        PolicyVault.PolicyConditionInput[] memory conditions =
+            _buildConditions(expiresAt, true, allowlistedBuyer, REQUIRED_BUYER_UAID, 0);
         vm.prank(PROVIDER);
-        policyId = policyVault.createTimeboundPolicy(
-            datasetId, PAYOUT, address(0), price, expiresAt, true, POLICY_METADATA_HASH, allowlist
-        );
+        policyId =
+            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), price, POLICY_METADATA_HASH, conditions);
     }
 
     function _registerBuyerAgent(address owner, string memory agentDomain) internal returns (uint256 agentId) {
@@ -104,20 +124,91 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         returns (uint256 policyId)
     {
         uint256 datasetId = _registerDataset();
-        address[] memory emptyAllowlist = new address[](0);
+        PolicyVault.PolicyConditionInput[] memory conditions =
+            _buildConditions(expiresAt, false, address(0), requiredBuyerUaid, agentId);
         vm.prank(PROVIDER);
-        policyId = policyVault.createUaidBoundPolicy(
-            datasetId,
-            PAYOUT,
-            address(0),
-            price,
-            expiresAt,
-            false,
-            POLICY_METADATA_HASH,
-            keccak256(bytes(requiredBuyerUaid)),
-            address(agentIdentityRegistry),
-            agentId,
-            emptyAllowlist
+        policyId =
+            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), price, POLICY_METADATA_HASH, conditions);
+    }
+
+    function _buildConditions(
+        uint64 expiresAt,
+        bool includeAllowlist,
+        address allowlistedBuyer,
+        string memory requiredBuyerUaid,
+        uint256 agentId
+    ) internal view returns (PolicyVault.PolicyConditionInput[] memory conditions) {
+        uint256 conditionCount = 0;
+        if (expiresAt != 0) {
+            conditionCount++;
+        }
+        if (includeAllowlist) {
+            conditionCount++;
+        }
+        if (agentId != 0) {
+            conditionCount++;
+        }
+
+        conditions = new PolicyVault.PolicyConditionInput[](conditionCount);
+        uint256 nextIndex = 0;
+
+        if (expiresAt != 0) {
+            conditions[nextIndex] = PolicyVault.PolicyConditionInput({
+                evaluator: address(timeRangeCondition),
+                configData: abi.encode(TimeRangeCondition.TimeRangeConfig({notBefore: 0, notAfter: expiresAt}))
+            });
+            nextIndex++;
+        }
+
+        if (includeAllowlist) {
+            address[] memory allowlist = new address[](1);
+            allowlist[0] = allowlistedBuyer;
+            conditions[nextIndex] = PolicyVault.PolicyConditionInput({
+                evaluator: address(addressAllowlistCondition), configData: abi.encode(allowlist)
+            });
+            nextIndex++;
+        }
+
+        if (agentId != 0) {
+            conditions[nextIndex] = PolicyVault.PolicyConditionInput({
+                evaluator: address(uaidOwnershipCondition),
+                configData: abi.encode(
+                    UaidOwnershipCondition.UaidOwnershipConfig({
+                        requiredBuyerUaidHash: keccak256(bytes(requiredBuyerUaid)),
+                        identityRegistry: address(agentIdentityRegistry),
+                        agentId: agentId
+                    })
+                )
+            });
+        }
+    }
+
+    function _emptyRuntimeInputs(uint256 length) internal pure returns (bytes[] memory runtimeInputs) {
+        runtimeInputs = new bytes[](length);
+    }
+
+    function _runtimeInputsForUaid(uint256 conditionCount, uint256 uaidConditionIndex, string memory buyerUaid)
+        internal
+        pure
+        returns (bytes[] memory runtimeInputs)
+    {
+        runtimeInputs = new bytes[](conditionCount);
+        runtimeInputs[uaidConditionIndex] = abi.encode(buyerUaid);
+    }
+
+    function _assertPolicyConditionFailure(
+        address buyer,
+        uint256 policyId,
+        address recipient,
+        bytes[] memory runtimeInputs,
+        uint256 value,
+        uint256
+    ) internal {
+        vm.prank(buyer);
+        (bool success,) = address(paymentModule).call{value: value}(
+            abi.encodeCall(PaymentModule.purchase, (policyId, recipient, runtimeInputs))
         );
+
+        assertTrue(!success);
     }
 }

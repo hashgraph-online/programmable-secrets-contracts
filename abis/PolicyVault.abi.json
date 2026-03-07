@@ -6,32 +6,6 @@
   },
   {
     "type": "function",
-    "name": "POLICY_TYPE_TIMEBOUND",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "POLICY_TYPE_UAID_ERC8004",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "UPGRADE_INTERFACE_VERSION",
     "inputs": [],
     "outputs": [
@@ -60,11 +34,6 @@
         "internalType": "uint256"
       },
       {
-        "name": "policyType",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
         "name": "payout",
         "type": "address",
         "internalType": "address"
@@ -80,147 +49,26 @@
         "internalType": "uint96"
       },
       {
-        "name": "expiresAt",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "allowlistEnabled",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
         "name": "metadataHash",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "allowlistAccounts",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "policyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "createTimeboundPolicy",
-    "inputs": [
-      {
-        "name": "datasetId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "payout",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "paymentToken",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "price",
-        "type": "uint96",
-        "internalType": "uint96"
-      },
-      {
-        "name": "expiresAt",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "allowlistEnabled",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "metadataHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "allowlistAccounts",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "policyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "createUaidBoundPolicy",
-    "inputs": [
-      {
-        "name": "datasetId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "payout",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "paymentToken",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "price",
-        "type": "uint96",
-        "internalType": "uint96"
-      },
-      {
-        "name": "expiresAt",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "allowlistEnabled",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "metadataHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "requiredBuyerUaidHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "identityRegistry",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "agentId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowlistAccounts",
-        "type": "address[]",
-        "internalType": "address[]"
+        "name": "conditions",
+        "type": "tuple[]",
+        "internalType": "struct PolicyVault.PolicyConditionInput[]",
+        "components": [
+          {
+            "name": "evaluator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "configData",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       }
     ],
     "outputs": [
@@ -235,6 +83,32 @@
   {
     "type": "function",
     "name": "datasetCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "evaluatorFeeRecipient",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "evaluatorRegistrationFee",
     "inputs": [],
     "outputs": [
       {
@@ -405,11 +279,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "expiresAt",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
             "name": "active",
             "type": "bool",
             "internalType": "bool"
@@ -445,24 +314,113 @@
             "internalType": "uint256"
           },
           {
-            "name": "policyType",
+            "name": "conditionsHash",
             "type": "bytes32",
             "internalType": "bytes32"
           },
           {
-            "name": "requiredBuyerUaidHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
+            "name": "conditionCount",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPolicyCondition",
+    "inputs": [
+      {
+        "name": "policyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "configData",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "configHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPolicyConditionCount",
+    "inputs": [
+      {
+        "name": "policyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPolicyEvaluator",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct PolicyVault.PolicyEvaluatorRegistration",
+        "components": [
           {
-            "name": "identityRegistry",
+            "name": "registrant",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "agentId",
-            "type": "uint256",
-            "internalType": "uint256"
+            "name": "metadataHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "registeredAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "active",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "builtIn",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -481,49 +439,6 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "isAllowlisted",
-    "inputs": [
-      {
-        "name": "policyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isSupportedPolicyType",
-    "inputs": [
-      {
-        "name": "policyType",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -579,6 +494,24 @@
   },
   {
     "type": "function",
+    "name": "registerBuiltInEvaluator",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "metadataHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "registerDataset",
     "inputs": [
       {
@@ -613,31 +546,26 @@
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
+    "name": "registerPolicyEvaluator",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "metadataHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
-    "name": "setAllowlist",
-    "inputs": [
-      {
-        "name": "policyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "accounts",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
+    "name": "renounceOwnership",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -649,6 +577,50 @@
         "name": "datasetId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "active",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setEvaluatorFeeRecipient",
+    "inputs": [
+      {
+        "name": "newFeeRecipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setEvaluatorRegistrationFee",
+    "inputs": [
+      {
+        "name": "newFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPolicyEvaluatorActive",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "active",
@@ -687,17 +659,7 @@
         "internalType": "uint96"
       },
       {
-        "name": "newExpiresAt",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
         "name": "active",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "allowlistEnabled",
         "type": "bool",
         "internalType": "bool"
       },
@@ -727,31 +689,6 @@
     ],
     "outputs": [],
     "stateMutability": "payable"
-  },
-  {
-    "type": "event",
-    "name": "AllowlistUpdated",
-    "inputs": [
-      {
-        "name": "policyId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -901,28 +838,22 @@
         "internalType": "address"
       },
       {
-        "name": "policyType",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
         "name": "price",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "expiresAt",
-        "type": "uint64",
+        "name": "conditionsHash",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "uint64"
+        "internalType": "bytes32"
       },
       {
-        "name": "allowlistEnabled",
-        "type": "bool",
+        "name": "conditionCount",
+        "type": "uint32",
         "indexed": false,
-        "internalType": "bool"
+        "internalType": "uint32"
       },
       {
         "name": "metadataHash",
@@ -935,6 +866,88 @@
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PolicyEvaluatorFeeRecipientUpdated",
+    "inputs": [
+      {
+        "name": "feeRecipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PolicyEvaluatorFeeUpdated",
+    "inputs": [
+      {
+        "name": "registrationFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PolicyEvaluatorRegistered",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "registrant",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "metadataHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "feePaid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "builtIn",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PolicyEvaluatorStatusUpdated",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "active",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -962,19 +975,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "newExpiresAt",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
         "name": "active",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      },
-      {
-        "name": "allowlistEnabled",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -1040,12 +1041,32 @@
   },
   {
     "type": "error",
+    "name": "EvaluatorAlreadyRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EvaluatorInactive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EvaluatorNotRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EvaluatorRegistrationPayoutFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "FailedCall",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidAgentId",
+    "name": "InvalidConditionEvaluator",
     "inputs": []
   },
   {
@@ -1055,12 +1076,28 @@
   },
   {
     "type": "error",
-    "name": "InvalidExpiry",
+    "name": "InvalidEvaluatorMetadataHash",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidIdentityRegistry",
+    "name": "InvalidEvaluatorRegistrationFee",
+    "inputs": [
+      {
+        "name": "expectedFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "actualFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidFeeRecipient",
     "inputs": []
   },
   {
@@ -1080,17 +1117,7 @@
   },
   {
     "type": "error",
-    "name": "InvalidPolicyType",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidPrice",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidRequiredBuyerUaid",
     "inputs": []
   },
   {

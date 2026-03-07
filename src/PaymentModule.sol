@@ -4,26 +4,22 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {IPolicyCondition} from "./IPolicyCondition.sol";
 import {PaymentModuleEvents} from "./Events.sol";
 import {
     AlreadyHasReceipt,
-    BuyerNotAllowlisted,
-    BuyerDoesNotOwnRequiredAgent,
-    BuyerUaidMismatch,
-    BuyerUaidRequired,
     DatasetInactive,
+    InvalidConditionInputCount,
     InvalidModuleAddress,
-    InvalidPolicyType,
     InvalidPaymentToken,
     InvalidPayoutAddress,
     InvalidPrice,
     PaymentFailed,
-    PolicyExpired,
+    PolicyConditionFailed,
     PolicyInactive
 } from "./Errors.sol";
 import {PolicyVault} from "./PolicyVault.sol";
 import {AccessReceipt} from "./AccessReceipt.sol";
-import {IIdentityRegistry} from "./IIdentityRegistry.sol";
 import {UpgradeableReentrancyGuard} from "./UpgradeableReentrancyGuard.sol";
 
 contract PaymentModule is
@@ -33,9 +29,6 @@ contract PaymentModule is
     UpgradeableReentrancyGuard,
     PaymentModuleEvents
 {
-    bytes32 private constant POLICY_TYPE_TIMEBOUND = keccak256("TIMEBOUND_V1");
-    bytes32 private constant POLICY_TYPE_UAID_ERC8004 = keccak256("UAID_ERC8004_V1");
-
     PolicyVault public policyVault;
     AccessReceipt public accessReceipt;
 
@@ -64,7 +57,7 @@ contract PaymentModule is
         _setAccessReceipt(accessReceiptAddress);
     }
 
-    function purchase(uint256 policyId, address recipient, string calldata buyerUaid)
+    function purchase(uint256 policyId, address recipient, bytes[] calldata conditionRuntimeInputs)
         external
         payable
         nonReentrant
@@ -72,21 +65,16 @@ contract PaymentModule is
     {
         PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
         PolicyVault.Dataset memory dataset = policyVault.getDataset(policy.datasetId);
+        address normalizedRecipient = recipient == address(0) ? msg.sender : recipient;
 
         if (!policy.active) {
             revert PolicyInactive();
-        }
-        if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
-            revert PolicyExpired();
         }
         if (!dataset.active) {
             revert DatasetInactive();
         }
         if (policy.paymentToken != address(0)) {
             revert InvalidPaymentToken();
-        }
-        if (policy.allowlistEnabled && !policyVault.isAllowlisted(policyId, msg.sender)) {
-            revert BuyerNotAllowlisted();
         }
         if (accessReceipt.receiptOfDatasetAndBuyer(policy.datasetId, msg.sender) != 0) {
             revert AlreadyHasReceipt();
@@ -98,7 +86,7 @@ contract PaymentModule is
         if (msg.value != price) {
             revert InvalidPrice();
         }
-        _validateBuyerPolicyRequirements(policy, buyerUaid);
+        _validatePurchaseConditions(policyId, msg.sender, normalizedRecipient, conditionRuntimeInputs);
 
         address payout = policy.payout;
         if (payout == address(0)) {
@@ -109,7 +97,6 @@ contract PaymentModule is
             revert PaymentFailed();
         }
 
-        address normalizedRecipient = recipient == address(0) ? msg.sender : recipient;
         uint64 purchasedAt = uint64(block.timestamp);
 
         receiptTokenId = accessReceipt.mintReceipt(
@@ -147,9 +134,6 @@ contract PaymentModule is
         if (!policy.active) {
             return false;
         }
-        if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
-            return false;
-        }
 
         return policyVault.getDataset(policy.datasetId).active;
     }
@@ -166,9 +150,6 @@ contract PaymentModule is
         AccessReceipt.Receipt memory receipt = accessReceipt.getReceipt(receiptTokenId);
         PolicyVault.Policy memory policy = policyVault.getPolicy(receipt.policyId);
         if (!policy.active) {
-            return false;
-        }
-        if (policy.expiresAt != 0 && policy.expiresAt <= block.timestamp) {
             return false;
         }
 
@@ -199,24 +180,26 @@ contract PaymentModule is
         emit AccessReceiptUpdated(accessReceiptAddress);
     }
 
-    function _validateBuyerPolicyRequirements(PolicyVault.Policy memory policy, string calldata buyerUaid)
-        internal
-        view
-    {
-        if (policy.policyType == POLICY_TYPE_TIMEBOUND) {
-            return;
+    function _validatePurchaseConditions(
+        uint256 policyId,
+        address buyer,
+        address recipient,
+        bytes[] calldata conditionRuntimeInputs
+    ) internal view {
+        uint256 conditionCount = policyVault.getPolicyConditionCount(policyId);
+        if (conditionCount != conditionRuntimeInputs.length) {
+            revert InvalidConditionInputCount();
         }
-        if (policy.policyType != POLICY_TYPE_UAID_ERC8004) {
-            revert InvalidPolicyType();
-        }
-        if (bytes(buyerUaid).length == 0) {
-            revert BuyerUaidRequired();
-        }
-        if (keccak256(bytes(buyerUaid)) != policy.requiredBuyerUaidHash) {
-            revert BuyerUaidMismatch();
-        }
-        if (IIdentityRegistry(policy.identityRegistry).ownerOf(policy.agentId) != msg.sender) {
-            revert BuyerDoesNotOwnRequiredAgent();
+
+        for (uint256 index = 0; index < conditionCount; ++index) {
+            (address evaluator, bytes memory configData,) = policyVault.getPolicyCondition(policyId, index);
+            bool allowed = IPolicyCondition(evaluator)
+                .isPurchaseAllowed(
+                    address(policyVault), policyId, buyer, recipient, configData, conditionRuntimeInputs[index]
+                );
+            if (!allowed) {
+                revert PolicyConditionFailed(index);
+            }
         }
     }
 }

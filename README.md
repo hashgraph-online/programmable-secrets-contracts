@@ -8,12 +8,13 @@ npx programmable-secret help
 
 Programmable Secrets is a receipt-backed entitlement protocol for finance-agent workflows.
 Providers commit encrypted market data, issuer materials, research, or private tool access onchain.
-Buyers satisfy an onchain policy, mint a non-transferable access receipt, and then request the buyer-bound key envelope from the offchain key release service.
+Buyers satisfy a dataset policy in the shared vault, mint a non-transferable access receipt, and then request the buyer-bound key envelope from the offchain key release service.
 
 This package is the contract source of truth for:
 - `PolicyVault`
 - `PaymentModule`
 - `AccessReceipt`
+- built-in policy evaluator modules
 - external `IdentityRegistry` integration for UAID-gated policies
 - deployment automation
 - checked-in ABIs
@@ -23,15 +24,19 @@ This package is the contract source of truth for:
 
 | Contract | Responsibility |
 | --- | --- |
-| `PolicyVault` | Stores provider-owned datasets plus attached policy records, including dataset discovery indexes and supported policy types. |
-| `PaymentModule` | Validates purchase conditions, settles native ETH, mints the access receipt, and resolves active entitlement state for policies or datasets. |
+| `PolicyVault` | Shared registry for provider-owned datasets plus attached policies. Each policy stores a list of registered policy evaluator modules and immutable condition config bytes. |
+| `PaymentModule` | Validates purchase conditions by calling each evaluator registered on the selected policy, settles native ETH, mints the access receipt, and resolves active entitlement state. |
 | `AccessReceipt` | Non-transferable ERC-721 entitlement proving a buyer satisfied a specific dataset policy. |
-| external `IdentityRegistry` | ERC-8004 registry address referenced by UAID-gated policies to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
+| `TimeRangeCondition` | Built-in policy evaluator that enforces `notBefore` / `notAfter` purchase windows. |
+| `UaidOwnershipCondition` | Built-in policy evaluator that enforces ERC-8004 wallet ownership plus exact buyer UAID match. |
+| `AddressAllowlistCondition` | Built-in policy evaluator that enforces a provider-supplied wallet allowlist. |
+| external `IdentityRegistry` | ERC-8004 registry address referenced by `UaidOwnershipCondition` to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
 
 The intended app entrypoints are:
 - dataset registration and policy creation through `PolicyVault`
 - purchase through `PaymentModule`
 - proof checks through `AccessReceipt` or `PaymentModule.receiptOfPolicyAndBuyer`
+- custom policy module registration through `PolicyVault.registerPolicyEvaluator`
 
 ## Target Networks
 
@@ -56,6 +61,11 @@ Current deployed addresses:
 | Robinhood Chain Testnet | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x5113b58890a712D3fDdb80e800fbe2573FB46C06` | `0xF287C269D17B923eBFFd1Eb76E6c3075286124Ad` |
 | Arbitrum Sepolia | `0xBd4E7A50e6c61Eb7dAA6c7485df88054E5b4796D` | `0x24c6212B2673b85B71CFB3A7a767Ff691ea7D7A2` | `0x5113b58890a712D3fDdb80e800fbe2573FB46C06` | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 
+Built-in policy evaluators are also deployed and recorded in each manifest:
+- `TimeRangeCondition`
+- `UaidOwnershipCondition`
+- `AddressAllowlistCondition`
+
 The contract repo should always treat these manifest files as the deployment source of truth.
 
 ## Contract Surface
@@ -64,35 +74,41 @@ The contract repo should always treat these manifest files as the deployment sou
 
 Primary functions:
 - `initialize(address initialOwner)`
+- `registerPolicyEvaluator(address evaluator, bytes32 metadataHash)` payable
+- `registerBuiltInEvaluator(address evaluator, bytes32 metadataHash)` owner-only
+- `setPolicyEvaluatorActive(address evaluator, bool active)` owner-only
+- `setEvaluatorRegistrationFee(uint256 newFee)` owner-only
+- `setEvaluatorFeeRecipient(address newFeeRecipient)` owner-only
 - `registerDataset(bytes32 ciphertextHash, bytes32 keyCommitment, bytes32 metadataHash, bytes32 providerUaidHash)`
 - `setDatasetActive(uint256 datasetId, bool active)`
-- `createTimeboundPolicy(uint256 datasetId, address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 metadataHash, address[] allowlistAccounts)`
-- `createUaidBoundPolicy(uint256 datasetId, address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 metadataHash, bytes32 requiredBuyerUaidHash, address identityRegistry, uint256 agentId, address[] allowlistAccounts)`
-- `createPolicyForDataset(uint256 datasetId, bytes32 policyType, address payout, address paymentToken, uint96 price, uint64 expiresAt, bool allowlistEnabled, bytes32 metadataHash, address[] allowlistAccounts)`
-- `updatePolicy(uint256 policyId, uint96 newPrice, uint64 newExpiresAt, bool active, bool allowlistEnabled, bytes32 newMetadataHash)`
-- `setAllowlist(uint256 policyId, address[] accounts, bool allowed)`
+- `createPolicyForDataset(uint256 datasetId, address payout, address paymentToken, uint96 price, bytes32 metadataHash, PolicyConditionInput[] conditions)`
+- `updatePolicy(uint256 policyId, uint96 newPrice, bool active, bytes32 newMetadataHash)`
 - `getDataset(uint256 datasetId)`
 - `getDatasetPolicyCount(uint256 datasetId)`
 - `getDatasetPolicyIdAt(uint256 datasetId, uint256 index)`
 - `getDatasetPolicyIds(uint256 datasetId)`
 - `getPolicy(uint256 policyId)`
-- `isAllowlisted(uint256 policyId, address account)`
-- `isSupportedPolicyType(bytes32 policyType)`
+- `getPolicyConditionCount(uint256 policyId)`
+- `getPolicyCondition(uint256 policyId, uint256 index)`
+- `getPolicyEvaluator(address evaluator)`
 - `datasetCount()`
 - `policyCount()`
 
 Events:
+- `PolicyEvaluatorRegistered`
+- `PolicyEvaluatorStatusUpdated`
+- `PolicyEvaluatorFeeUpdated`
+- `PolicyEvaluatorFeeRecipientUpdated`
 - `DatasetRegistered`
 - `DatasetStatusUpdated`
 - `PolicyCreated`
 - `PolicyUpdated`
-- `AllowlistUpdated`
 
 ### PaymentModule
 
 Primary functions:
 - `initialize(address initialOwner, address policyVaultAddress, address accessReceiptAddress)`
-- `purchase(uint256 policyId, address recipient, string buyerUaid)`
+- `purchase(uint256 policyId, address recipient, bytes[] conditionRuntimeInputs)`
 - `hasAccess(uint256 policyId, address buyer)`
 - `hasDatasetAccess(uint256 datasetId, address buyer)`
 - `receiptOfPolicyAndBuyer(uint256 policyId, address buyer)`
@@ -123,19 +139,35 @@ Events:
 - Datasets are first-class registry entries. A provider registers an encrypted dataset once, then attaches one or more policies to it.
 - Policies are explorable onchain through `datasetCount`, `policyCount`, `getDataset`, `getPolicy`, `getDatasetPolicyCount`, `getDatasetPolicyIdAt`, and `getDatasetPolicyIds`.
 - Native ETH only in the current green path. Policies with a non-zero `paymentToken` revert.
-- `POLICY_TYPE_TIMEBOUND` is the built-in supported policy type. It enforces an optional expiration timestamp and establishes the registry pattern for future policy types such as KYC or geographic proofs.
-- `POLICY_TYPE_UAID_ERC8004` is the built-in agent-gated policy type. It stores the resolved `identityRegistry`, `agentId`, and `requiredBuyerUaidHash`, then enforces ERC-8004 ownership plus an exact HCS-14 UAID hash match during purchase.
+- `PolicyVault` is a shared registry, not a per-provider custom vault factory.
+- A policy is generic: it stores an ordered list of evaluator contracts plus opaque `configData` for each condition.
+- Each evaluator must be registered before providers can attach it to a policy.
+- Public evaluator registration costs `0.05 ETH` by default and pays that fee to `evaluatorFeeRecipient`.
+- Built-in evaluator registration is owner-only and fee-free.
+- `PaymentModule.purchase` loops over the selected policy’s stored evaluator list and passes the caller-supplied `conditionRuntimeInputs[index]` to each evaluator.
 - `PolicyVault` owns dataset and policy metadata plus provider-controlled mutability.
 - `PaymentModule` is the only contract allowed to mint receipts.
 - One buyer can hold at most one receipt per policy.
 - Receipts are non-transferable.
 - Every receipt token resolves to the same metadata URI: `ipfs://bafkreibw3osbcrk7w522tcjuz5a4ihffd3bfbjkwmfso5esxyfml2cfal4`.
-- Expiry is strict: `expiresAt == block.timestamp` is expired.
-- UAID-bound purchases require the caller to pass the exact buyer UAID string.
+- Condition modules own their own validation rules. For example, `TimeRangeCondition` treats `notAfter == block.timestamp` as expired.
+- UAID-bound purchases pass the exact buyer UAID string in the runtime input consumed by `UaidOwnershipCondition`.
 - `PaymentModule.hasAccess` reports active entitlement, not merely historical purchase. It returns `false` once a time-bound policy expires or a dataset is deactivated.
 - `AccessReceipt` remains the durable historical proof of purchase, while `PaymentModule.hasDatasetAccess` resolves whether any active policy on a dataset still grants access.
-- Allowlist enforcement is onchain through `PolicyVault.isAllowlisted`.
+- Allowlist enforcement is onchain through `AddressAllowlistCondition`.
 - Offchain key release should validate both the signed buyer request and current onchain access state.
+
+## Built-In Policy Modules
+
+The default deployment registers three built-ins:
+
+| Module | Config type | Runtime input |
+| --- | --- | --- |
+| `TimeRangeCondition` | `TimeRangeConfig { notBefore, notAfter }` | empty bytes |
+| `UaidOwnershipCondition` | `UaidOwnershipConfig { requiredBuyerUaidHash, identityRegistry, agentId }` | ABI-encoded buyer UAID string |
+| `AddressAllowlistCondition` | ABI-encoded `address[]` | empty bytes |
+
+Custom modules can implement `IPolicyCondition` and register themselves through `registerPolicyEvaluator(...)` after paying the fee.
 
 ## Upgrade Model
 
@@ -163,8 +195,11 @@ Regenerate checked-in ABIs:
 
 ```bash
 forge inspect --json AccessReceipt abi > abis/AccessReceipt.abi.json
+forge inspect --json AddressAllowlistCondition abi > abis/AddressAllowlistCondition.abi.json
 forge inspect --json PaymentModule abi > abis/PaymentModule.abi.json
 forge inspect --json PolicyVault abi > abis/PolicyVault.abi.json
+forge inspect --json TimeRangeCondition abi > abis/TimeRangeCondition.abi.json
+forge inspect --json UaidOwnershipCondition abi > abis/UaidOwnershipCondition.abi.json
 ```
 
 ## CLI Workflows

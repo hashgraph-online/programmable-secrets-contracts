@@ -2,6 +2,13 @@
 pragma solidity ^0.8.24;
 
 abstract contract PolicyVaultEvents {
+    event PolicyEvaluatorRegistered(
+        address indexed evaluator, address indexed registrant, bytes32 metadataHash, uint256 feePaid, bool builtIn
+    );
+    event PolicyEvaluatorStatusUpdated(address indexed evaluator, bool active);
+    event PolicyEvaluatorFeeUpdated(uint256 registrationFee);
+    event PolicyEvaluatorFeeRecipientUpdated(address indexed feeRecipient);
+
     event DatasetRegistered(
         uint256 indexed datasetId,
         address indexed provider,
@@ -19,25 +26,16 @@ abstract contract PolicyVaultEvents {
         address indexed provider,
         address payout,
         address paymentToken,
-        bytes32 policyType,
         uint256 price,
-        uint64 expiresAt,
-        bool allowlistEnabled,
+        bytes32 conditionsHash,
+        uint32 conditionCount,
         bytes32 metadataHash,
         bytes32 datasetMetadataHash
     );
 
     event PolicyUpdated(
-        uint256 indexed policyId,
-        uint256 indexed datasetId,
-        uint256 newPrice,
-        uint64 newExpiresAt,
-        bool active,
-        bool allowlistEnabled,
-        bytes32 newMetadataHash
+        uint256 indexed policyId, uint256 indexed datasetId, uint256 newPrice, bool active, bytes32 newMetadataHash
     );
-
-    event AllowlistUpdated(uint256 indexed policyId, address indexed account, bool allowed);
 }
 
 abstract contract PaymentModuleEvents {
