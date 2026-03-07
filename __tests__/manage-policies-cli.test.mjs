@@ -34,6 +34,7 @@ test('examples list exposes the two-agent sale flow', () => {
   const payload = parseJsonOutput(result);
   assert.equal(payload.kind, 'examples');
   assert.ok(payload.payload.examples['two-agent-sale']);
+  assert.ok(payload.payload.examples['custom-eth-balance-policy']);
 });
 
 test('examples show prints a buyer unlock flow with CLI commands', () => {
@@ -52,4 +53,17 @@ test('examples show prints a buyer unlock flow with CLI commands', () => {
   assert.equal(commands.some((command) => command.includes('datasets register')), true);
   assert.equal(commands.some((command) => command.includes('purchase --policy-id')), true);
   assert.equal(commands.some((command) => command.includes('krs decrypt')), true);
+});
+
+test('examples show prints the custom evaluator deployment flow', () => {
+  const result = runCli(['examples', 'show', '--name', 'custom-eth-balance-policy', '--json']);
+  const payload = parseJsonOutput(result);
+
+  assert.equal(payload.kind, 'example');
+  assert.equal(payload.payload.name, 'custom-eth-balance-policy');
+
+  const commands = payload.payload.example.steps.flatMap((step) => step.commands);
+  assert.equal(commands.some((command) => command.includes('forge create src/EthBalanceCondition.sol:EthBalanceCondition')), true);
+  assert.equal(commands.some((command) => command.includes('registerPolicyEvaluator(address,bytes32)')), true);
+  assert.equal(commands.some((command) => command.includes('policies import')), true);
 });

@@ -1,0 +1,107 @@
+type ProtocolConfig @entity(immutable: false) {
+  id: ID!
+  evaluatorRegistrationFee: BigInt!
+  evaluatorFeeRecipient: Bytes
+  policyVault: Bytes
+  paymentModule: Bytes
+  accessReceipt: Bytes
+  updatedAt: BigInt!
+  updatedBlock: BigInt!
+}
+
+type Evaluator @entity(immutable: false) {
+  id: ID!
+  evaluator: Bytes!
+  registrant: Bytes
+  metadataHash: Bytes
+  feePaid: BigInt!
+  builtIn: Boolean!
+  active: Boolean!
+  createdAt: BigInt!
+  createdBlock: BigInt!
+  createdTxHash: Bytes!
+  updatedAt: BigInt!
+  updatedBlock: BigInt!
+  updatedTxHash: Bytes!
+}
+
+type Dataset @entity(immutable: false) {
+  id: ID!
+  datasetId: BigInt!
+  provider: Bytes
+  ciphertextHash: Bytes
+  keyCommitment: Bytes
+  metadataHash: Bytes
+  providerUaidHash: Bytes
+  active: Boolean!
+  policyCount: BigInt!
+  accessGrantCount: BigInt!
+  createdAt: BigInt!
+  createdBlock: BigInt!
+  createdTxHash: Bytes!
+  updatedAt: BigInt!
+  updatedBlock: BigInt!
+  updatedTxHash: Bytes!
+  policies: [Policy!]! @derivedFrom(field: "dataset")
+  accessGrants: [AccessGrant!]! @derivedFrom(field: "dataset")
+  receipts: [Receipt!]! @derivedFrom(field: "dataset")
+}
+
+type Policy @entity(immutable: false) {
+  id: ID!
+  policyId: BigInt!
+  dataset: Dataset!
+  provider: Bytes
+  payout: Bytes
+  paymentToken: Bytes
+  price: BigInt!
+  conditionsHash: Bytes
+  conditionCount: BigInt!
+  metadataHash: Bytes
+  datasetMetadataHash: Bytes
+  active: Boolean!
+  accessGrantCount: BigInt!
+  createdAt: BigInt!
+  createdBlock: BigInt!
+  createdTxHash: Bytes!
+  updatedAt: BigInt!
+  updatedBlock: BigInt!
+  updatedTxHash: Bytes!
+  accessGrants: [AccessGrant!]! @derivedFrom(field: "policy")
+  receipts: [Receipt!]! @derivedFrom(field: "policy")
+}
+
+type AccessGrant @entity(immutable: true) {
+  id: ID!
+  policy: Policy!
+  dataset: Dataset!
+  receiptTokenId: BigInt!
+  buyer: Bytes!
+  recipient: Bytes!
+  paymentToken: Bytes!
+  price: BigInt!
+  purchasedAt: BigInt!
+  ciphertextHash: Bytes!
+  keyCommitment: Bytes!
+  transactionHash: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+}
+
+type Receipt @entity(immutable: false) {
+  id: ID!
+  receiptTokenId: BigInt!
+  policy: Policy!
+  dataset: Dataset!
+  buyer: Bytes!
+  recipient: Bytes!
+  paymentToken: Bytes!
+  price: BigInt!
+  purchasedAt: BigInt!
+  ciphertextHash: Bytes!
+  keyCommitment: Bytes!
+  mintedFrom: String!
+  transactionHash: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+}

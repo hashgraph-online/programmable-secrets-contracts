@@ -15,6 +15,7 @@ This package is the contract source of truth for:
 - `PaymentModule`
 - `AccessReceipt`
 - built-in policy evaluator modules
+- example custom policy evaluator modules
 - external `IdentityRegistry` integration for UAID-gated policies
 - deployment automation
 - checked-in ABIs
@@ -171,6 +172,84 @@ The default deployment registers three built-ins:
 
 Custom modules can implement `IPolicyCondition` and register themselves through `registerPolicyEvaluator(...)` after paying the fee.
 
+### Custom Evaluator Example: ETH Balance > 0.1 ETH
+
+The repo includes a concrete custom module at `src/EthBalanceCondition.sol`.
+It enforces a single rule: the buyer wallet must hold at least the configured `minimumBalanceWei` at purchase time.
+
+End-to-end operator flow:
+
+1. Deploy the evaluator:
+
+```bash
+forge create src/EthBalanceCondition.sol:EthBalanceCondition \
+  --rpc-url $RPC_URL \
+  --private-key $ETH_PK_2
+```
+
+2. Register it in `PolicyVault` and pay the public `0.05 ETH` evaluator fee:
+
+```bash
+cast send $POLICY_VAULT \
+  "registerPolicyEvaluator(address,bytes32)" \
+  $EVALUATOR_ADDRESS \
+  $(cast keccak "eth-balance-threshold-v1") \
+  --value 0.05ether \
+  --rpc-url $RPC_URL \
+  --private-key $ETH_PK_2
+```
+
+3. Create the encrypted dataset bundle and register the dataset through the CLI:
+
+```bash
+programmable-secret krs encrypt \
+  --plaintext-file ./examples/two-agent-sale/agent-a-signal.json \
+  --title "ETH balance gated signal" \
+  --provider-uaid did:uaid:hol:balance-provider \
+  --output ./examples/custom-evaluators/eth-balance-bundle.json
+
+programmable-secret datasets register \
+  --wallet provider \
+  --bundle-file ./examples/custom-evaluators/eth-balance-bundle.json
+```
+
+4. Encode the threshold config (`0.1 ETH`) and import the custom policy from the checked-in template:
+
+```bash
+export CONFIG_DATA=$(cast abi-encode "f(uint256)" 100000000000000000)
+
+jq --arg evaluator "$EVALUATOR_ADDRESS" \
+   --arg config "$CONFIG_DATA" \
+   --argjson datasetId <dataset-id> \
+   '.policy.datasetId = $datasetId
+    | .policy.conditions[0].evaluator = $evaluator
+    | .policy.conditions[0].configData = $config' \
+   ./examples/custom-evaluators/eth-balance-policy.template.json \
+   > /tmp/eth-balance-policy.json
+
+programmable-secret policies import \
+  --wallet provider \
+  --file /tmp/eth-balance-policy.json
+```
+
+5. Buyer purchases and proves the unlock:
+
+```bash
+programmable-secret purchase --policy-id <policy-id> --wallet agent
+programmable-secret receipts get --receipt-id <receipt-id>
+programmable-secret krs verify \
+  --bundle-file ./examples/custom-evaluators/eth-balance-bundle.json \
+  --policy-id <policy-id> \
+  --receipt-id <receipt-id> \
+  --buyer <buyer-wallet>
+```
+
+Proof in this repo:
+- `test/ProgrammableSecretsCustomEvaluator.t.sol` proves evaluator registration works
+- it proves a buyer above the threshold can purchase successfully
+- it proves a buyer below the threshold reverts with `PolicyConditionFailed(0)`
+- it proves zero-threshold configs are rejected
+
 ## Upgrade Model
 
 - `PolicyVault` is deployed behind `ERC1967Proxy` using UUPS.
@@ -198,6 +277,7 @@ Regenerate checked-in ABIs:
 ```bash
 forge inspect --json AccessReceipt abi > abis/AccessReceipt.abi.json
 forge inspect --json AddressAllowlistCondition abi > abis/AddressAllowlistCondition.abi.json
+forge inspect --json EthBalanceCondition abi > abis/EthBalanceCondition.abi.json
 forge inspect --json PaymentModule abi > abis/PaymentModule.abi.json
 forge inspect --json PolicyVault abi > abis/PolicyVault.abi.json
 forge inspect --json TimeRangeCondition abi > abis/TimeRangeCondition.abi.json
@@ -224,6 +304,12 @@ That example uses the checked-in fixture at `examples/two-agent-sale/agent-a-sig
 - Agent A creating a sell-side policy
 - Agent B purchasing the policy and reading the minted receipt
 - Agent B verifying and decrypting the bundle locally
+
+There is also a custom evaluator walkthrough:
+
+```bash
+programmable-secret examples show --name custom-eth-balance-policy
+```
 
 The package also exposes a first-class binary:
 
@@ -507,6 +593,31 @@ Checked-in app-facing ABIs:
 - `abis/AccessReceipt.abi.json`
 
 These are the files the broker and portal should consume for code generation, client reads, and transaction encoding.
+
+## Subgraph
+
+This repo now includes a Graph subgraph package at `subgraph/`.
+It indexes:
+- `PolicyVault`
+- `PaymentModule`
+- `AccessReceipt`
+
+Network manifests are generated directly from the deployment source of truth:
+- `deployments/robinhood-testnet.json` (default)
+- `deployments/arbitrum-sepolia.json` (optional)
+
+Build locally:
+
+```bash
+pnpm --dir subgraph install
+pnpm --dir subgraph run build
+```
+
+Generated manifests:
+- `subgraph/subgraph.robinhood-testnet.yaml`
+- `subgraph/subgraph.arbitrum-sepolia.yaml`
+
+See `subgraph/README.md` for deployment commands and entity coverage.
 
 ## GitHub Automation
 

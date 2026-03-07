@@ -38,6 +38,7 @@ function showCommandTopic(topic) {
       printCommandUsage([
         `List examples: ${CLI_COMMAND} examples list`,
         `Show the two-agent flow: ${CLI_COMMAND} examples show --name two-agent-sale`,
+        `Show the custom evaluator flow: ${CLI_COMMAND} examples show --name custom-eth-balance-policy`,
       ]);
       return;
     case 'templates':

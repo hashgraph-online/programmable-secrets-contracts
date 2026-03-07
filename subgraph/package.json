@@ -1,0 +1,27 @@
+{
+  "name": "programmable-secrets-subgraph",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Graph subgraph for programmable-secrets-contracts on Robinhood Testnet and Arbitrum Sepolia.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare:manifests": "node ./scripts/generate-manifests.mjs",
+    "codegen:robinhood": "pnpm run prepare:manifests && graph codegen subgraph.robinhood-testnet.yaml",
+    "codegen:arbitrum": "pnpm run prepare:manifests && graph codegen subgraph.arbitrum-sepolia.yaml",
+    "codegen": "pnpm run codegen:robinhood && pnpm run codegen:arbitrum",
+    "build:robinhood": "pnpm run codegen:robinhood && graph build subgraph.robinhood-testnet.yaml --output-dir build/robinhood-testnet",
+    "build:arbitrum": "pnpm run codegen:arbitrum && graph build subgraph.arbitrum-sepolia.yaml --output-dir build/arbitrum-sepolia",
+    "build": "pnpm run build:robinhood && pnpm run build:arbitrum"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-ts": "0.36.0"
+  },
+  "devDependencies": {
+    "@graphprotocol/graph-cli": "0.98.1",
+    "typescript": "5.9.2"
+  }
+}

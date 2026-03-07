@@ -1,0 +1,14 @@
+{
+  "policy": {
+    "datasetId": 1,
+    "payout": "0xBEEF00000000000000000000000000000000BEEF",
+    "priceWei": "10000000000000000",
+    "metadataHash": "0x4f3362bc62545818e180a5fffe27fd79d5f0ef53b6fb78b9d312e52f4af5b1ef",
+    "conditions": [
+      {
+        "evaluator": "__EVALUATOR_ADDRESS__",
+        "configData": "__CONFIG_DATA__"
+      }
+    ]
+  }
+}

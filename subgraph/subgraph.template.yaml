@@ -1,0 +1,96 @@
+specVersion: 1.3.0
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum/contract
+    name: PolicyVault
+    network: __NETWORK__
+    source:
+      address: "__POLICY_VAULT_ADDRESS__"
+      abi: PolicyVault
+      startBlock: __START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolConfig
+        - Evaluator
+        - Dataset
+        - Policy
+      abis:
+        - name: PolicyVault
+          file: ../abis/PolicyVault.abi.json
+      eventHandlers:
+        - event: DatasetRegistered(indexed uint256,indexed address,bytes32,bytes32,bytes32,bytes32)
+          handler: handleDatasetRegistered
+        - event: DatasetStatusUpdated(indexed uint256,bool)
+          handler: handleDatasetStatusUpdated
+        - event: PolicyCreated(indexed uint256,indexed uint256,indexed address,address,address,uint256,bytes32,uint32,bytes32,bytes32)
+          handler: handlePolicyCreated
+        - event: PolicyUpdated(indexed uint256,indexed uint256,uint256,bool,bytes32)
+          handler: handlePolicyUpdated
+        - event: PolicyEvaluatorRegistered(indexed address,indexed address,bytes32,uint256,bool)
+          handler: handlePolicyEvaluatorRegistered
+        - event: PolicyEvaluatorStatusUpdated(indexed address,bool)
+          handler: handlePolicyEvaluatorStatusUpdated
+        - event: PolicyEvaluatorFeeUpdated(uint256)
+          handler: handlePolicyEvaluatorFeeUpdated
+        - event: PolicyEvaluatorFeeRecipientUpdated(indexed address)
+          handler: handlePolicyEvaluatorFeeRecipientUpdated
+      file: ./src/policy-vault.ts
+
+  - kind: ethereum/contract
+    name: PaymentModule
+    network: __NETWORK__
+    source:
+      address: "__PAYMENT_MODULE_ADDRESS__"
+      abi: PaymentModule
+      startBlock: __START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolConfig
+        - Dataset
+        - Policy
+        - AccessGrant
+        - Receipt
+      abis:
+        - name: PaymentModule
+          file: ../abis/PaymentModule.abi.json
+      eventHandlers:
+        - event: AccessGranted(indexed uint256,indexed uint256,indexed uint256,address,address,address,uint256,uint64,bytes32,bytes32)
+          handler: handleAccessGranted
+        - event: PolicyVaultUpdated(indexed address)
+          handler: handlePolicyVaultUpdated
+        - event: AccessReceiptUpdated(indexed address)
+          handler: handleAccessReceiptUpdated
+      file: ./src/payment-module.ts
+
+  - kind: ethereum/contract
+    name: AccessReceipt
+    network: __NETWORK__
+    source:
+      address: "__ACCESS_RECEIPT_ADDRESS__"
+      abi: AccessReceipt
+      startBlock: __START_BLOCK__
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolConfig
+        - Dataset
+        - Policy
+        - Receipt
+      abis:
+        - name: AccessReceipt
+          file: ../abis/AccessReceipt.abi.json
+      eventHandlers:
+        - event: ReceiptMinted(indexed uint256,indexed uint256,indexed uint256,address,address,address,uint256,uint64,bytes32,bytes32)
+          handler: handleReceiptMinted
+        - event: PaymentModuleUpdated(indexed address)
+          handler: handlePaymentModuleUpdated
+      file: ./src/access-receipt.ts

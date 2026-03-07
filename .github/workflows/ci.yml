@@ -101,3 +101,32 @@ jobs:
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           TARBALL="${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz"
           npx --yes "./${TARBALL}" help
+
+  subgraph:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: subgraph/pnpm-lock.yaml
+
+      - name: Install subgraph dependencies
+        run: pnpm --dir subgraph install --frozen-lockfile
+
+      - name: Generate manifests
+        run: pnpm --dir subgraph run prepare:manifests
+
+      - name: Verify generated manifests are checked in
+        run: git diff --exit-code subgraph/subgraph.robinhood-testnet.yaml subgraph/subgraph.arbitrum-sepolia.yaml
+
+      - name: Build subgraph manifests
+        run: pnpm --dir subgraph run build
