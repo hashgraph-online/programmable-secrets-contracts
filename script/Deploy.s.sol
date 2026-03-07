@@ -11,6 +11,17 @@ import {TimeRangeCondition} from "../src/TimeRangeCondition.sol";
 import {UaidOwnershipCondition} from "../src/UaidOwnershipCondition.sol";
 
 contract Deploy is Script {
+    struct DeploymentContext {
+        address policyVaultImplementation;
+        PolicyVault policyVault;
+        AccessReceipt accessReceipt;
+        AddressAllowlistCondition addressAllowlistCondition;
+        address paymentModuleImplementation;
+        PaymentModule paymentModule;
+        TimeRangeCondition timeRangeCondition;
+        UaidOwnershipCondition uaidOwnershipCondition;
+    }
+
     bytes32 internal constant DEFAULT_POLICY_VAULT_IMPLEMENTATION_SALT =
         keccak256("programmable-secrets-policy-vault-implementation-v1");
     bytes32 internal constant DEFAULT_POLICY_VAULT_PROXY_SALT = keccak256("programmable-secrets-policy-vault-proxy-v1");
@@ -43,80 +54,99 @@ contract Deploy is Script {
         bytes32 accessReceiptSalt = DEFAULT_ACCESS_RECEIPT_SALT;
 
         vm.startBroadcast(deployerPrivateKey);
-        address policyVaultImplementation;
-        PolicyVault deployedPolicyVault;
-        AccessReceipt deployedAccessReceipt;
-        AddressAllowlistCondition deployedAddressAllowlistCondition;
-        address paymentModuleImplementation;
-        PaymentModule deployedPaymentModule;
-        TimeRangeCondition deployedTimeRangeCondition;
-        UaidOwnershipCondition deployedUaidOwnershipCondition;
+        DeploymentContext memory deployed = useCreate2
+            ? _deployCreate2Stack(
+                deployer,
+                policyVaultImplementationSalt,
+                policyVaultProxySalt,
+                paymentModuleImplementationSalt,
+                paymentModuleProxySalt,
+                accessReceiptSalt
+            )
+            : _deployStandardStack(deployer);
 
-        if (useCreate2) {
-            policyVaultImplementation = address(new PolicyVault{salt: policyVaultImplementationSalt}());
-            deployedPolicyVault = PolicyVault(
-                address(
-                    new ERC1967Proxy{salt: policyVaultProxySalt}(
-                        policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))
-                    )
-                )
-            );
-            deployedAccessReceipt = new AccessReceipt{salt: accessReceiptSalt}(deployer);
-            deployedTimeRangeCondition = new TimeRangeCondition();
-            deployedUaidOwnershipCondition = new UaidOwnershipCondition();
-            deployedAddressAllowlistCondition = new AddressAllowlistCondition();
-            paymentModuleImplementation = address(new PaymentModule{salt: paymentModuleImplementationSalt}());
-            deployedPaymentModule = PaymentModule(
-                address(
-                    new ERC1967Proxy{salt: paymentModuleProxySalt}(
-                        paymentModuleImplementation,
-                        abi.encodeCall(
-                            PaymentModule.initialize,
-                            (deployer, address(deployedPolicyVault), address(deployedAccessReceipt))
-                        )
-                    )
-                )
-            );
-        } else {
-            policyVaultImplementation = address(new PolicyVault());
-            deployedPolicyVault = PolicyVault(
-                address(new ERC1967Proxy(policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))))
-            );
-            deployedAccessReceipt = new AccessReceipt(deployer);
-            deployedTimeRangeCondition = new TimeRangeCondition();
-            deployedUaidOwnershipCondition = new UaidOwnershipCondition();
-            deployedAddressAllowlistCondition = new AddressAllowlistCondition();
-            paymentModuleImplementation = address(new PaymentModule());
-            deployedPaymentModule = PaymentModule(
-                address(
-                    new ERC1967Proxy(
-                        paymentModuleImplementation,
-                        abi.encodeCall(
-                            PaymentModule.initialize,
-                            (deployer, address(deployedPolicyVault), address(deployedAccessReceipt))
-                        )
-                    )
-                )
-            );
-        }
-        deployedAccessReceipt.setPaymentModule(address(deployedPaymentModule));
-        deployedPolicyVault.registerBuiltInEvaluator(
-            address(deployedTimeRangeCondition), keccak256("builtin:time-range")
-        );
-        deployedPolicyVault.registerBuiltInEvaluator(
-            address(deployedUaidOwnershipCondition), keccak256("builtin:uaid-ownership")
-        );
-        deployedPolicyVault.registerBuiltInEvaluator(
-            address(deployedAddressAllowlistCondition), keccak256("builtin:address-allowlist")
-        );
-
-        if (requestedOwner != deployer) {
-            deployedPolicyVault.transferOwnership(requestedOwner);
-            deployedPaymentModule.transferOwnership(requestedOwner);
-            deployedAccessReceipt.transferOwnership(requestedOwner);
-        }
+        _configureDeployment(deployed, deployer, requestedOwner);
         identityRegistryAddress;
         vm.stopBroadcast();
+    }
+
+    function _deployCreate2Stack(
+        address deployer,
+        bytes32 policyVaultImplementationSalt,
+        bytes32 policyVaultProxySalt,
+        bytes32 paymentModuleImplementationSalt,
+        bytes32 paymentModuleProxySalt,
+        bytes32 accessReceiptSalt
+    ) internal returns (DeploymentContext memory deployed) {
+        deployed.policyVaultImplementation = address(new PolicyVault{salt: policyVaultImplementationSalt}());
+        deployed.policyVault = PolicyVault(
+            address(
+                new ERC1967Proxy{salt: policyVaultProxySalt}(
+                    deployed.policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer))
+                )
+            )
+        );
+        deployed.accessReceipt = new AccessReceipt{salt: accessReceiptSalt}(deployer);
+        deployed.timeRangeCondition = new TimeRangeCondition();
+        deployed.uaidOwnershipCondition = new UaidOwnershipCondition();
+        deployed.addressAllowlistCondition = new AddressAllowlistCondition();
+        deployed.paymentModuleImplementation = address(new PaymentModule{salt: paymentModuleImplementationSalt}());
+        deployed.paymentModule = PaymentModule(
+            address(
+                new ERC1967Proxy{salt: paymentModuleProxySalt}(
+                    deployed.paymentModuleImplementation,
+                    abi.encodeCall(
+                        PaymentModule.initialize,
+                        (deployer, address(deployed.policyVault), address(deployed.accessReceipt))
+                    )
+                )
+            )
+        );
+    }
+
+    function _deployStandardStack(address deployer) internal returns (DeploymentContext memory deployed) {
+        deployed.policyVaultImplementation = address(new PolicyVault());
+        deployed.policyVault = PolicyVault(
+            address(
+                new ERC1967Proxy(deployed.policyVaultImplementation, abi.encodeCall(PolicyVault.initialize, (deployer)))
+            )
+        );
+        deployed.accessReceipt = new AccessReceipt(deployer);
+        deployed.timeRangeCondition = new TimeRangeCondition();
+        deployed.uaidOwnershipCondition = new UaidOwnershipCondition();
+        deployed.addressAllowlistCondition = new AddressAllowlistCondition();
+        deployed.paymentModuleImplementation = address(new PaymentModule());
+        deployed.paymentModule = PaymentModule(
+            address(
+                new ERC1967Proxy(
+                    deployed.paymentModuleImplementation,
+                    abi.encodeCall(
+                        PaymentModule.initialize,
+                        (deployer, address(deployed.policyVault), address(deployed.accessReceipt))
+                    )
+                )
+            )
+        );
+    }
+
+    function _configureDeployment(DeploymentContext memory deployed, address deployer, address requestedOwner)
+        internal
+    {
+        deployed.accessReceipt.setPaymentModule(address(deployed.paymentModule));
+        deployed.policyVault
+            .registerBuiltInEvaluator(address(deployed.timeRangeCondition), keccak256("builtin:time-range"));
+        deployed.policyVault
+            .registerBuiltInEvaluator(address(deployed.uaidOwnershipCondition), keccak256("builtin:uaid-ownership"));
+        deployed.policyVault
+            .registerBuiltInEvaluator(
+                address(deployed.addressAllowlistCondition), keccak256("builtin:address-allowlist")
+            );
+
+        if (requestedOwner != deployer) {
+            deployed.policyVault.transferOwnership(requestedOwner);
+            deployed.paymentModule.transferOwnership(requestedOwner);
+            deployed.accessReceipt.transferOwnership(requestedOwner);
+        }
     }
 }
 
