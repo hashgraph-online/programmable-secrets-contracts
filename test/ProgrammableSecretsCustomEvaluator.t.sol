@@ -27,13 +27,13 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
         uint256 datasetId = _registerDataset();
         PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
         conditions[0] = PolicyVault.PolicyConditionInput({
-            evaluator: address(ethBalanceCondition),
-            configData: abi.encode(MINIMUM_BALANCE_WEI)
+            evaluator: address(ethBalanceCondition), configData: abi.encode(MINIMUM_BALANCE_WEI)
         });
 
         vm.prank(PROVIDER);
-        uint256 policyId =
-            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions);
+        uint256 policyId = policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+        );
 
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(1);
 
@@ -52,13 +52,13 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
         uint256 datasetId = _registerDataset();
         PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
         conditions[0] = PolicyVault.PolicyConditionInput({
-            evaluator: address(ethBalanceCondition),
-            configData: abi.encode(50 ether)
+            evaluator: address(ethBalanceCondition), configData: abi.encode(50 ether)
         });
 
         vm.prank(PROVIDER);
-        uint256 policyId =
-            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions);
+        uint256 policyId = policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+        );
 
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(1);
         vm.deal(BUYER, 0.05 ether);
@@ -81,13 +81,14 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
         uint256 datasetId = _registerDataset();
         PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
         conditions[0] = PolicyVault.PolicyConditionInput({
-            evaluator: address(ethBalanceCondition),
-            configData: abi.encode(MINIMUM_BALANCE_WEI)
+            evaluator: address(ethBalanceCondition), configData: abi.encode(MINIMUM_BALANCE_WEI)
         });
 
         vm.prank(PROVIDER);
         vm.expectRevert(EvaluatorNotRegistered.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCustomEvaluatorRejectsZeroThreshold() public {
@@ -98,12 +99,13 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
         uint256 datasetId = _registerDataset();
         PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
         conditions[0] = PolicyVault.PolicyConditionInput({
-            evaluator: address(ethBalanceCondition),
-            configData: abi.encode(uint256(0))
+            evaluator: address(ethBalanceCondition), configData: abi.encode(uint256(0))
         });
 
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidMinimumBalance.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+        );
     }
 }
