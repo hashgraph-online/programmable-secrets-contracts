@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildWalletBackedProviderUaid } from '../script/cli/commands/flows.mjs';
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(TEST_DIR, '..');
@@ -112,4 +114,23 @@ test('examples show prints the Stylus threshold committee evaluator flow', () =>
     ),
     true,
   );
+});
+
+test('buildWalletBackedProviderUaid derives a deterministic wallet-backed UAID', () => {
+  const uaid = buildWalletBackedProviderUaid({
+    chainId: 46630,
+    walletAddress: '0x8ba1f109551bD432803012645Ac136ddd64DBA72',
+  });
+
+  assert.match(uaid, /^uaid:/);
+  assert.match(uaid, /eip155:46630:/);
+  assert.match(uaid.toLowerCase(), /0x8ba1f109551bd432803012645ac136ddd64dba72/);
+});
+
+test('.env.example defaults the broker to production hol.org', () => {
+  const envExample = readFileSync(resolve(PROJECT_ROOT, '.env.example'), 'utf8');
+
+  assert.match(envExample, /^REGISTRY_BROKER_BASE_URL=https:\/\/hol\.org\/registry\/api\/v1$/m);
+  assert.doesNotMatch(envExample, /127\.0\.0\.1:4000|localhost:4000/);
+  assert.doesNotMatch(envExample, /REGISTRY_BROKER_API_KEY=local-dev-api-key-change-me/);
 });

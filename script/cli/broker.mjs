@@ -9,6 +9,7 @@ import {
 import {
   CLI_COMMAND,
   DEFAULT_COMMUNICATION_PROTOCOL,
+  DEFAULT_REGISTRY_BROKER_BASE_URL,
   DEFAULT_REGISTRY_NAMESPACE,
 } from './constants.mjs';
 import { CliError } from './errors.mjs';
@@ -185,7 +186,7 @@ function resolveBrokerAccountIdForRole(role) {
 }
 
 function resolveBrokerClientConfig(role) {
-  const baseUrl = resolveEnvValue('REGISTRY_BROKER_BASE_URL', 'https://hol.org/registry/api/v1').value;
+  const baseUrl = resolveEnvValue('REGISTRY_BROKER_BASE_URL', DEFAULT_REGISTRY_BROKER_BASE_URL).value;
   const apiKey = resolveEnvValue('REGISTRY_BROKER_API_KEY', '').value;
   assertProductionBrokerBaseUrl(baseUrl);
   const accountId = resolveBrokerAccountIdForRole(role);
@@ -222,14 +223,14 @@ function assertProductionBrokerBaseUrl(baseUrl) {
       throw new CliError(
         'BROKER_PRODUCTION_REQUIRED',
         `Registry Broker base URL must use production hol.org, received "${baseUrl}".`,
-        'Set REGISTRY_BROKER_BASE_URL=https://hol.org/registry/api/v1.',
+        `Set REGISTRY_BROKER_BASE_URL=${DEFAULT_REGISTRY_BROKER_BASE_URL}.`,
       );
     }
     if (!parsed.pathname.startsWith('/registry')) {
       throw new CliError(
         'BROKER_PRODUCTION_REQUIRED',
         `Registry Broker base URL must point at /registry, received "${baseUrl}".`,
-        'Set REGISTRY_BROKER_BASE_URL=https://hol.org/registry/api/v1.',
+        `Set REGISTRY_BROKER_BASE_URL=${DEFAULT_REGISTRY_BROKER_BASE_URL}.`,
       );
     }
   } catch (error) {
@@ -239,7 +240,7 @@ function assertProductionBrokerBaseUrl(baseUrl) {
     throw new CliError(
       'BROKER_URL_INVALID',
       `Invalid REGISTRY_BROKER_BASE_URL "${baseUrl}".`,
-      'Set REGISTRY_BROKER_BASE_URL=https://hol.org/registry/api/v1.',
+      `Set REGISTRY_BROKER_BASE_URL=${DEFAULT_REGISTRY_BROKER_BASE_URL}.`,
     );
   }
 }

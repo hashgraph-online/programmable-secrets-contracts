@@ -620,6 +620,9 @@ Optional overrides:
 - `REGISTRY_BROKER_ACCOUNT_ID`
 - `REGISTRY_BROKER_ERC8004_NETWORK`
 
+`REGISTRY_BROKER_BASE_URL` defaults to `https://hol.org/registry/api/v1`.
+Only override it when you are intentionally targeting a non-production broker for local development.
+
 `flow:direct` defaults to Robinhood testnet.
 `flow:uaid` and `flow:broker` should target Arbitrum Sepolia unless your selected network manifest has a live `IdentityRegistry`.
 

@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
-import { encodeAbiParameters, formatEther, keccak256, parseAbiParameters, toBytes, zeroAddress } from 'viem';
+import { createUaid, toEip155Caip10 } from '@hashgraphonline/standards-sdk';
+import { encodeAbiParameters, formatEther, getAddress, keccak256, parseAbiParameters, toBytes, zeroAddress } from 'viem';
 import { ACCESS_RECEIPT_ABI, CLI_COMMAND, IDENTITY_REGISTRY_ABI, PAYMENT_MODULE_ABI, POLICY_VAULT_ABI } from '../constants.mjs';
 import { decryptPayload, encryptPayload, sha256Hex } from '../crypto.mjs';
 import { requireEnvValue, resolvePreferredEnvValue } from '../env.mjs';
@@ -42,6 +43,11 @@ function parseEnvBoolean(value, fallback = false) {
     return false;
   }
   return fallback;
+}
+
+export function buildWalletBackedProviderUaid({ chainId, walletAddress }) {
+  const nativeId = toEip155Caip10(chainId, getAddress(walletAddress));
+  return createUaid(`did:pkh:${nativeId}`, { nativeId });
 }
 
 async function resolveProviderUaid(networkId) {
@@ -210,10 +216,18 @@ export async function runDirectMarketplaceFlow() {
   const ciphertextHash = keccak256(`0x${encryptedPayload.ciphertext.toString('hex')}`);
   const keyCommitment = keccak256(`0x${encryptedPayload.contentKey.toString('hex')}`);
   const metadataHash = keccak256(toBytes(JSON.stringify({ title: readOption(CLI_RUNTIME.globalOptions, ['dataset-title'], 'TSLA Volatility Model'), mimeType: 'application/json', plaintextHash: sha256Hex(plaintextBuffer) })));
-  const providerUaid = await resolveProviderUaid(networkId);
+  const configuredProviderUaid = resolvePreferredEnvValue(
+    'PROGRAMMABLE_SECRETS_PROVIDER_UAID',
+    ['DEMO_PROVIDER_UAID'],
+  ).value;
+  const providerUaid = configuredProviderUaid || buildWalletBackedProviderUaid({
+    chainId: chain.id,
+    walletAddress: providerWalletClient.account.address,
+  });
   const providerUaidHash = keccak256(toBytes(providerUaid));
   printHeading('Direct Marketplace Flow');
   printField('Network', chain.name);
+  printField('Provider UAID', providerUaid);
   const datasetTx = await providerWalletClient.writeContract({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
