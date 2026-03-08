@@ -41,7 +41,11 @@
     "examples",
     "script/cli",
     "script/manage-policies.mjs",
-    "stylus/threshold-committee-condition"
+    "stylus/threshold-committee-condition/Cargo.lock",
+    "stylus/threshold-committee-condition/Cargo.toml",
+    "stylus/threshold-committee-condition/Stylus.toml",
+    "stylus/threshold-committee-condition/rust-toolchain.toml",
+    "stylus/threshold-committee-condition/src"
   ],
   "scripts": {
     "cli": "node --import tsx script/manage-policies.mjs",
