@@ -152,7 +152,7 @@ export function resolveMetadataHash(options) {
   });
 }
 
-export function resolveDatasetRegistrationHashes(options) {
+export function resolveDatasetRegistrationHashes(options, providerUaidFallback = null) {
   return {
     ciphertextHash: resolveHashOption(options, {
       description: 'ciphertext hash',
@@ -174,6 +174,7 @@ export function resolveDatasetRegistrationHashes(options) {
       hashOptionNames: ['provider-uaid-hash'],
       valueOptionNames: ['provider-uaid'],
       example: '--provider-uaid-hash 0x... or --provider-uaid did:uaid:...',
+      fallback: providerUaidFallback ? buildHashFromText(providerUaidFallback) : undefined,
     }),
   };
 }

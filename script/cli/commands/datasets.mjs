@@ -1,4 +1,5 @@
 import { CLI_COMMAND, POLICY_VAULT_ABI } from '../constants.mjs';
+import { CliError } from '../errors.mjs';
 import {
   buildExplorerUrl,
   buildPolicyVaultAddress,
@@ -15,6 +16,7 @@ import {
   serializeDataset,
 } from '../index-support.mjs';
 import { emitPreview, emitResult, printField, printSuccess, serializeJson } from '../output.mjs';
+import { registerBrokerBackedAgentWithOptions, resolveBrokerBackedAgentByWallet } from '../broker.mjs';
 import {
   parseBigIntValue,
   parseBooleanOption,
@@ -29,10 +31,102 @@ import { CLI_RUNTIME } from '../runtime.mjs';
 import { maybeWriteJsonFile, readJsonFile } from '../chain.mjs';
 import { normalizeHash } from '../options.mjs';
 
-function resolveDatasetRegistrationArgs(options) {
+async function resolveProviderUaidFromBroker(options, {
+  allowRegistration,
+  networkId,
+  walletRole,
+}) {
+  const explicitProviderUaid = readOption(options, ['provider-uaid'], null);
+  if (explicitProviderUaid) {
+    return explicitProviderUaid;
+  }
+  const shouldResolve = parseBooleanOption(
+    readOption(
+      options,
+      ['resolve-provider-uaid', 'provider-uaid-auto'],
+      'true',
+    ),
+    true,
+  );
+  if (!shouldResolve) {
+    return null;
+  }
+  const requireErc8004 = parseBooleanOption(
+    readOption(
+      options,
+      ['provider-uaid-require-erc8004'],
+      'false',
+    ),
+    false,
+  );
+  const existingIdentity = await resolveBrokerBackedAgentByWallet({
+    networkId,
+    requireErc8004,
+    walletRole,
+  });
+  if (existingIdentity?.uaid) {
+    return existingIdentity.uaid;
+  }
+  const shouldRegister = parseBooleanOption(
+    readOption(
+      options,
+      ['register-provider-agent', 'broker-register-provider-agent'],
+      'false',
+    ),
+    false,
+  );
+  if (!shouldRegister) {
+    return null;
+  }
+  if (!allowRegistration) {
+    throw new CliError(
+      'PREVIEW_REQUIRES_PROVIDER_UAID',
+      'Preview mode cannot auto-register a provider agent.',
+      `Provide --provider-uaid, --provider-uaid-hash, or run without --preview using "${CLI_COMMAND} datasets register --register-provider-agent true".`,
+    );
+  }
+  const registration = await registerBrokerBackedAgentWithOptions({
+    includeErc8004Network: requireErc8004,
+    networkId,
+    registerIfMissing: true,
+    reuseExisting: false,
+    walletRole,
+  });
+  try {
+    return registration.brokerUaid;
+  } finally {
+    await registration.localAgentHandle.stop();
+  }
+}
+
+async function resolveDatasetRegistrationArgs(options, {
+  allowRegistration,
+  networkId,
+  walletRole,
+}) {
   const bundlePath = readOption(options, ['bundle-file'], null);
   if (!bundlePath) {
-    return resolveDatasetRegistrationHashes(options);
+    const providerUaid = await resolveProviderUaidFromBroker(options, {
+      allowRegistration,
+      networkId,
+      walletRole,
+    });
+    try {
+      return resolveDatasetRegistrationHashes(options, providerUaid);
+    } catch (error) {
+      if (
+        error instanceof CliError
+        && error.code === 'MISSING_HASH_SOURCE'
+        && `${error.message}`.toLowerCase().includes('provider uaid hash')
+      ) {
+        throw new CliError(
+          'MISSING_PROVIDER_UAID',
+          'Dataset registration requires a valid provider UAID.',
+          `Provide --provider-uaid, --provider-uaid-hash, or enable auto-registration with "${CLI_COMMAND} datasets register --register-provider-agent true".`,
+        );
+      }
+      throw error;
+    }
   }
   const payload = readJsonFile(bundlePath, 'bundle file');
   const bundle = payload.bundle || payload;
@@ -125,7 +219,12 @@ export async function registerDatasetCommand(options) {
   const walletClient = getWalletClientForRole({ role: walletRole, chain });
   const publicClient = getPublicClient(chain);
   const policyVaultAddress = buildPolicyVaultAddress(networkId);
-  const hashes = resolveDatasetRegistrationArgs(options);
+  const previewMode = shouldPreview(options);
+  const hashes = await resolveDatasetRegistrationArgs(options, {
+    allowRegistration: !previewMode,
+    networkId,
+    walletRole,
+  });
   const preview = {
     action: 'Register Dataset',
     address: policyVaultAddress,
@@ -137,7 +236,7 @@ export async function registerDatasetCommand(options) {
     valueWei: 0n,
     wallet: walletClient.account.address,
   };
-  if (shouldPreview(options)) {
+  if (previewMode) {
     emitPreview(preview);
     return;
   }
