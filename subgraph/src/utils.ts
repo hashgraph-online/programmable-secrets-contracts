@@ -69,6 +69,7 @@ export function loadOrCreatePolicy(
   created.policyId = policyId;
   created.dataset = datasetId.toString();
   created.price = ZERO;
+  created.receiptTransferable = false;
   created.conditionCount = ZERO;
   created.active = false;
   created.accessGrantCount = ZERO;

@@ -25,6 +25,7 @@ contract AccessReceiptMetadataTest is Test {
             address(0),
             1 ether,
             uint64(block.timestamp),
+            false,
             keccak256("ciphertext-1"),
             keccak256("key-1")
         );
@@ -37,6 +38,7 @@ contract AccessReceiptMetadataTest is Test {
             address(0),
             2 ether,
             uint64(block.timestamp),
+            true,
             keccak256("ciphertext-2"),
             keccak256("key-2")
         );

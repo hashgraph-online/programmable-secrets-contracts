@@ -15,8 +15,8 @@ export const ENV_PATH_CANDIDATES = [
   resolve(PACKAGE_ROOT, '.env.local'),
   resolve(PACKAGE_ROOT, '.env'),
 ].filter(Boolean);
-export const DEFAULT_REGISTRY_BROKER_BASE_URL = 'http://127.0.0.1:4000/api/v1';
-export const DEFAULT_REGISTRY_BROKER_API_KEY = 'local-dev-api-key-change-me';
+export const DEFAULT_REGISTRY_BROKER_BASE_URL = 'https://hol.org/registry/api/v1';
+export const DEFAULT_REGISTRY_BROKER_API_KEY = '';
 export const DEFAULT_NETWORK_ID = 'robinhood-testnet';
 export const DEFAULT_REGISTRY_NAMESPACE = 'hashgraph-online';
 export const DEFAULT_COMMUNICATION_PROTOCOL = 'a2a';
@@ -139,12 +139,12 @@ export const POLICY_VAULT_ABI = parseAbi([
   'function setDatasetActive(uint256 datasetId,bool active)',
   'function datasetCount() view returns (uint256)',
   'function policyCount() view returns (uint256)',
-  'function getPolicy(uint256 policyId) view returns ((address provider,address payout,address paymentToken,uint96 price,uint64 createdAt,bool active,bool allowlistEnabled,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash,uint256 datasetId,bytes32 conditionsHash,uint32 conditionCount))',
+  'function getPolicy(uint256 policyId) view returns ((address provider,address payout,address paymentToken,uint96 price,uint64 createdAt,bool active,bool receiptTransferable,bool allowlistEnabled,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash,uint256 datasetId,bytes32 conditionsHash,uint32 conditionCount))',
   'function getDataset(uint256 datasetId) view returns ((address provider,uint64 createdAt,bool active,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash))',
   'function getDatasetPolicyCount(uint256 datasetId) view returns (uint256)',
   'function getDatasetPolicyIdAt(uint256 datasetId,uint256 index) view returns (uint256)',
   'function getDatasetPolicyIds(uint256 datasetId) view returns (uint256[])',
-  'function createPolicyForDataset(uint256 datasetId,address payout,address paymentToken,uint96 price,bytes32 metadataHash,(address evaluator,bytes configData)[] conditions) returns (uint256 policyId)',
+  'function createPolicyForDataset(uint256 datasetId,address payout,address paymentToken,uint96 price,bool receiptTransferable,bytes32 metadataHash,(address evaluator,bytes configData)[] conditions) returns (uint256 policyId)',
   'function updatePolicy(uint256 policyId,uint96 newPrice,bool active,bytes32 newMetadataHash)',
   'function getPolicyConditionCount(uint256 policyId) view returns (uint256)',
   'function getPolicyCondition(uint256 policyId,uint256 index) view returns (address evaluator,bytes configData,bytes32 configHash)',
@@ -156,7 +156,7 @@ export const POLICY_VAULT_ABI = parseAbi([
   'event PolicyEvaluatorRegistered(address indexed evaluator,address indexed registrant,bytes32 metadataHash,uint64 registeredAt,bool builtIn)',
   'event DatasetRegistered(uint256 indexed datasetId,address indexed provider,bytes32 ciphertextHash,bytes32 keyCommitment,bytes32 metadataHash,bytes32 providerUaidHash)',
   'event DatasetStatusUpdated(uint256 indexed datasetId,bool active)',
-  'event PolicyCreated(uint256 indexed policyId,uint256 indexed datasetId,address indexed provider,address payout,address paymentToken,uint256 price,bytes32 conditionsHash,uint32 conditionCount,bytes32 metadataHash,bytes32 datasetMetadataHash)',
+  'event PolicyCreated(uint256 indexed policyId,uint256 indexed datasetId,address indexed provider,address payout,address paymentToken,uint256 price,bool receiptTransferable,bytes32 conditionsHash,uint32 conditionCount,bytes32 metadataHash,bytes32 datasetMetadataHash)',
   'event PolicyUpdated(uint256 indexed policyId,uint256 indexed datasetId,uint256 newPrice,bool active,bytes32 newMetadataHash)',
 ]);
 
@@ -170,8 +170,10 @@ export const PAYMENT_MODULE_ABI = parseAbi([
 export const ACCESS_RECEIPT_ABI = parseAbi([
   'function hasAccess(uint256 policyId,address buyer) view returns (bool)',
   'function receiptOfPolicyAndBuyer(uint256 policyId,address buyer) view returns (uint256)',
+  'function receiptOfPolicyAndHolder(uint256 policyId,address holder) view returns (uint256)',
   'function receiptOfDatasetAndBuyer(uint256 datasetId,address buyer) view returns (uint256)',
-  'function getReceipt(uint256 receiptTokenId) view returns ((uint256 policyId,uint256 datasetId,address buyer,address recipient,address paymentToken,uint96 price,uint64 purchasedAt,bytes32 ciphertextHash,bytes32 keyCommitment))',
+  'function receiptOfDatasetAndHolder(uint256 datasetId,address holder) view returns (uint256)',
+  'function getReceipt(uint256 receiptTokenId) view returns ((uint256 policyId,uint256 datasetId,address buyer,address recipient,address paymentToken,uint96 price,uint64 purchasedAt,bool receiptTransferable,bytes32 ciphertextHash,bytes32 keyCommitment))',
 ]);
 
 export const IDENTITY_REGISTRY_ABI = parseAbi([

@@ -32,7 +32,7 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         uint256 policyId = policyVault.createPolicyForDataset(
-            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+            datasetId, PAYOUT, address(0), POLICY_PRICE, false, POLICY_METADATA_HASH, conditions
         );
 
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(1);
@@ -57,7 +57,7 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         uint256 policyId = policyVault.createPolicyForDataset(
-            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+            datasetId, PAYOUT, address(0), POLICY_PRICE, false, POLICY_METADATA_HASH, conditions
         );
 
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(1);
@@ -87,7 +87,7 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
         vm.prank(PROVIDER);
         vm.expectRevert(EvaluatorNotRegistered.selector);
         policyVault.createPolicyForDataset(
-            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+            datasetId, PAYOUT, address(0), POLICY_PRICE, false, POLICY_METADATA_HASH, conditions
         );
     }
 
@@ -105,7 +105,7 @@ contract ProgrammableSecretsCustomEvaluatorTest is ProgrammableSecretsModularTes
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidMinimumBalance.selector);
         policyVault.createPolicyForDataset(
-            datasetId, PAYOUT, address(0), POLICY_PRICE, POLICY_METADATA_HASH, conditions
+            datasetId, PAYOUT, address(0), POLICY_PRICE, false, POLICY_METADATA_HASH, conditions
         );
     }
 }

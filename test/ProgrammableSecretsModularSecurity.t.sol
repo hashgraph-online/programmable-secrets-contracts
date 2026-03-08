@@ -103,6 +103,7 @@ contract ZeroPayoutPolicyVaultV2 {
             price: PRICE,
             createdAt: uint64(block.timestamp),
             active: true,
+            receiptTransferable: false,
             allowlistEnabled: false,
             ciphertextHash: keccak256("ciphertext"),
             keyCommitment: keccak256("content-key"),
@@ -166,7 +167,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidExpiry.selector);
-        policyVault.createPolicyForDataset(datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, address(0), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCreatePolicyRejectsInvalidTimeRangeOrdering() public {
@@ -183,7 +186,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidExpiry.selector);
-        policyVault.createPolicyForDataset(datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, address(0), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCreatePolicyRejectsTooManyConditions() public {
@@ -205,7 +210,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
             .call(
                 abi.encodeCall(
                     PolicyVault.createPolicyForDataset,
-                    (datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions)
+                    (datasetId, address(0), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions)
                 )
             );
 
@@ -223,7 +228,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         vm.expectRevert(EmptyAllowlist.selector);
-        policyVault.createPolicyForDataset(datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, address(0), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCreatePolicyRejectsOversizedAllowlist() public {
@@ -232,7 +239,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         address[] memory allowlist = new address[](maxEntries + 1);
 
         for (uint256 index = 0; index < allowlist.length; ++index) {
-            allowlist[index] = address(uint160(index + 1));
+            allowlist[index] = address(bytes20(keccak256(abi.encode(index + 1))));
         }
 
         PolicyVault.PolicyConditionInput[] memory conditions = new PolicyVault.PolicyConditionInput[](1);
@@ -245,7 +252,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
             .call(
                 abi.encodeCall(
                     PolicyVault.createPolicyForDataset,
-                    (datasetId, address(0), address(0), 1 ether, POLICY_METADATA_HASH, conditions)
+                    (datasetId, address(0), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions)
                 )
             );
 
@@ -268,7 +275,7 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         uint256 policyId = policyVault.createPolicyForDataset(
-            datasetId, address(payout), address(0), 1 ether, POLICY_METADATA_HASH, conditions
+            datasetId, address(payout), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
         );
         bytes[] memory runtimeInputs = new bytes[](0);
 
@@ -287,11 +294,11 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
 
         vm.prank(PROVIDER);
         uint256 outerPolicyId = policyVault.createPolicyForDataset(
-            outerDatasetId, address(payout), address(0), 1 ether, POLICY_METADATA_HASH, conditions
+            outerDatasetId, address(payout), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
         );
         vm.prank(PROVIDER);
         uint256 reenterPolicyId = policyVault.createPolicyForDataset(
-            reenterDatasetId, address(payout), address(0), 1 ether, POLICY_METADATA_HASH, conditions
+            reenterDatasetId, address(payout), address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
         );
 
         payout.configure(reenterPolicyId, 1 ether);
@@ -367,7 +374,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         });
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidRequiredBuyerUaid.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCreateUaidBoundPolicyRejectsZeroIdentityRegistry() public {
@@ -385,7 +394,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         });
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidIdentityRegistry.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCreateUaidBoundPolicyRejectsZeroAgentId() public {
@@ -403,7 +414,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         });
         vm.prank(PROVIDER);
         vm.expectRevert(InvalidAgentId.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testCreateUaidBoundPolicyRejectsUnknownExternalIdentity() public {
@@ -421,7 +434,9 @@ contract ProgrammableSecretsModularSecurityTest is ProgrammableSecretsModularTes
         });
         vm.prank(PROVIDER);
         vm.expectRevert(AgentIdentityNotFound.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testPurchaseRejectsUaidBoundPolicyWithoutUaid() public {

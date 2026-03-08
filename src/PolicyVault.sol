@@ -42,6 +42,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         uint96 price;
         uint64 createdAt;
         bool active;
+        bool receiptTransferable;
         bool allowlistEnabled;
         bytes32 ciphertextHash;
         bytes32 keyCommitment;
@@ -151,10 +152,13 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         address payout,
         address paymentToken,
         uint96 price,
+        bool receiptTransferable,
         bytes32 metadataHash,
         PolicyConditionInput[] calldata conditions
     ) external returns (uint256 policyId) {
-        policyId = _createPolicyForDataset(msg.sender, datasetId, payout, paymentToken, price, metadataHash, conditions);
+        policyId = _createPolicyForDataset(
+            msg.sender, datasetId, payout, paymentToken, price, receiptTransferable, metadataHash, conditions
+        );
     }
 
     function updatePolicy(uint256 policyId, uint96 newPrice, bool active, bytes32 newMetadataHash) external {
@@ -332,6 +336,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         address payout,
         address paymentToken,
         uint96 price,
+        bool receiptTransferable,
         bytes32 metadataHash,
         PolicyConditionInput[] calldata conditions
     ) internal returns (uint256 policyId) {
@@ -363,6 +368,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             price: price,
             createdAt: uint64(block.timestamp),
             active: true,
+            receiptTransferable: receiptTransferable,
             allowlistEnabled: false,
             ciphertextHash: dataset.ciphertextHash,
             keyCommitment: dataset.keyCommitment,
@@ -373,19 +379,7 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             conditionCount: uint32(conditions.length)
         });
         datasetPolicyIds[datasetId].push(policyId);
-
-        emit PolicyCreated(
-            policyId,
-            datasetId,
-            provider,
-            normalizedPayout,
-            paymentToken,
-            price,
-            conditionsHash,
-            uint32(conditions.length),
-            metadataHash,
-            dataset.metadataHash
-        );
+        _emitPolicyCreated(policyId, policies[policyId], dataset.metadataHash);
     }
 
     function _storePolicyConditions(
@@ -413,7 +407,11 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
             IPolicyCondition(condition.evaluator)
                 .validateCondition(address(this), provider, datasetId, condition.configData);
 
-            bytes32 configHash = keccak256(condition.configData);
+            bytes32 configHash;
+            bytes memory configData = condition.configData;
+            assembly {
+                configHash := keccak256(add(configData, 0x20), mload(configData))
+            }
             policyConditions[nextPolicyId].push(
                 StoredPolicyCondition({
                     evaluator: condition.evaluator, configData: condition.configData, configHash: configHash
@@ -442,5 +440,21 @@ contract PolicyVault is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable,
         if (metadataHash == bytes32(0)) {
             revert InvalidPolicyHashes();
         }
+    }
+
+    function _emitPolicyCreated(uint256 policyId, Policy storage policy, bytes32 datasetMetadataHash) internal {
+        emit PolicyCreated(
+            policyId,
+            policy.datasetId,
+            policy.provider,
+            policy.payout,
+            policy.paymentToken,
+            policy.price,
+            policy.receiptTransferable,
+            policy.conditionsHash,
+            policy.conditionCount,
+            policy.metadataHash,
+            datasetMetadataHash
+        );
     }
 }

@@ -16,7 +16,8 @@ function showCommandTopic(topic) {
         `Read dataset: ${CLI_COMMAND} datasets get --dataset-id 1`,
         `Export dataset: ${CLI_COMMAND} datasets export --dataset-id 1 --output dataset-1.json`,
         `Import dataset: ${CLI_COMMAND} datasets import --file dataset-1.json`,
-        `Register dataset: ${CLI_COMMAND} datasets register --provider-uaid did:uaid:hol:quantlab --metadata-json '{"title":"TSLA"}' --ciphertext "encrypted payload" --key-material "wrapped key"`,
+        `Register dataset: ${CLI_COMMAND} datasets register --metadata-json '{"title":"TSLA"}' --ciphertext "encrypted payload" --key-material "wrapped key" --resolve-provider-uaid true`,
+        `Auto-register provider identity if missing: ${CLI_COMMAND} datasets register --register-provider-agent true --provider-uaid-require-erc8004 false --metadata-json '{"title":"TSLA"}' --ciphertext "encrypted payload" --key-material "wrapped key"`,
         `Set dataset active state: ${CLI_COMMAND} datasets set-active --dataset-id 1 --active false`,
       ]);
       return;
@@ -28,8 +29,8 @@ function showCommandTopic(topic) {
         `List registered evaluators: ${CLI_COMMAND} policies evaluators`,
         `Export policy: ${CLI_COMMAND} policies export --policy-id 1 --output policy-1.json`,
         `Import policy: ${CLI_COMMAND} policies import --file policy-1.json`,
-        `Create timebound policy: ${CLI_COMMAND} policies create-timebound --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --metadata-json '{"title":"TSLA 24h access"}'`,
-        `Create UAID-bound policy: ${CLI_COMMAND} policies create-uaid --dataset-id 1 --price-eth 0.00001 --required-buyer-uaid uaid:aid:... --agent-id 97`,
+        `Create timebound policy: ${CLI_COMMAND} policies create-timebound --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --receipt-transferable false --metadata-json '{"title":"TSLA 24h access"}'`,
+        `Create UAID-bound policy: ${CLI_COMMAND} policies create-uaid --dataset-id 1 --price-eth 0.00001 --required-buyer-uaid uaid:aid:... --agent-id 97 --receipt-transferable false`,
         `Update policy: ${CLI_COMMAND} policies update --policy-id 1 --price-eth 0.00002 --active true --metadata-json '{"title":"Updated policy"}'`,
       ]);
       return;
@@ -79,7 +80,7 @@ export function showHelp(topic = null) {
   console.log(`  ${CLI_COMMAND} start         Guided quick start with next-step recommendations`);
   console.log(`  ${CLI_COMMAND} doctor        Check env, RPC, broker, and deployment readiness`);
   console.log(`  ${CLI_COMMAND} env-bootstrap Write a local .env.local from live Docker defaults`);
-  console.log(`  ${CLI_COMMAND} flow:direct   Robinhood marketplace flow with timebound access and local unlock proof`);
+  console.log(`  ${CLI_COMMAND} flow:direct   Robinhood marketplace flow with timebound access, optional receipt transferability, and local unlock proof`);
   console.log(`  ${CLI_COMMAND} flow:uaid     Direct ERC-8004 identity flow on a chain with IdentityRegistry support`);
   console.log(`  ${CLI_COMMAND} flow:broker   Registry Broker-backed ERC-8004 identity flow`);
   console.log(`  ${CLI_COMMAND} examples ...  Print end-to-end command walkthroughs such as the two-agent sale flow`);

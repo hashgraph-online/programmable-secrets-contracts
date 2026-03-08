@@ -83,7 +83,15 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         returns (uint256 policyId)
     {
         uint256 datasetId = _registerDataset();
-        policyId = _createTimeboundPolicyForDataset(datasetId, price, expiresAt, allowlistEnabled);
+        policyId = _createTimeboundPolicyForDataset(datasetId, price, expiresAt, allowlistEnabled, false);
+    }
+
+    function _createTransferableDatasetPolicy(uint96 price, uint64 expiresAt, bool allowlistEnabled)
+        internal
+        returns (uint256 policyId)
+    {
+        uint256 datasetId = _registerDataset();
+        policyId = _createTimeboundPolicyForDataset(datasetId, price, expiresAt, allowlistEnabled, true);
     }
 
     function _registerDataset() internal returns (uint256 datasetId) {
@@ -91,15 +99,19 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         datasetId = policyVault.registerDataset(CIPHERTEXT_HASH, KEY_COMMITMENT, METADATA_HASH, PROVIDER_UAID_HASH);
     }
 
-    function _createTimeboundPolicyForDataset(uint256 datasetId, uint96 price, uint64 expiresAt, bool allowlistEnabled)
-        internal
-        returns (uint256 policyId)
-    {
+    function _createTimeboundPolicyForDataset(
+        uint256 datasetId,
+        uint96 price,
+        uint64 expiresAt,
+        bool allowlistEnabled,
+        bool receiptTransferable
+    ) internal returns (uint256 policyId) {
         PolicyVault.PolicyConditionInput[] memory conditions =
             _buildConditions(expiresAt, allowlistEnabled, address(0), REQUIRED_BUYER_UAID, 0);
         vm.prank(PROVIDER);
-        policyId =
-            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), price, POLICY_METADATA_HASH, conditions);
+        policyId = policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), price, receiptTransferable, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function _createAllowlistedDatasetPolicy(address allowlistedBuyer, uint96 price, uint64 expiresAt)
@@ -110,8 +122,9 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         PolicyVault.PolicyConditionInput[] memory conditions =
             _buildConditions(expiresAt, true, allowlistedBuyer, REQUIRED_BUYER_UAID, 0);
         vm.prank(PROVIDER);
-        policyId =
-            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), price, POLICY_METADATA_HASH, conditions);
+        policyId = policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), price, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function _registerBuyerAgent(address owner, string memory agentDomain) internal returns (uint256 agentId) {
@@ -127,8 +140,9 @@ abstract contract ProgrammableSecretsModularTestBase is Test {
         PolicyVault.PolicyConditionInput[] memory conditions =
             _buildConditions(expiresAt, false, address(0), requiredBuyerUaid, agentId);
         vm.prank(PROVIDER);
-        policyId =
-            policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), price, POLICY_METADATA_HASH, conditions);
+        policyId = policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), price, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function _buildConditions(

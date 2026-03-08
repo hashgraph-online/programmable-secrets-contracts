@@ -107,6 +107,7 @@ contract PaymentModule is
             policy.paymentToken,
             price,
             purchasedAt,
+            policy.receiptTransferable,
             dataset.ciphertextHash,
             dataset.keyCommitment
         );
@@ -120,6 +121,7 @@ contract PaymentModule is
             policy.paymentToken,
             price,
             purchasedAt,
+            policy.receiptTransferable,
             dataset.ciphertextHash,
             dataset.keyCommitment
         );

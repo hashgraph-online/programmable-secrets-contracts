@@ -36,6 +36,7 @@ error AllowlistTooLarge(uint256 provided, uint256 maxAllowed);
 error TooManyPolicyConditions(uint256 provided, uint256 maxAllowed);
 error NotPaymentModule();
 error ReceiptNonTransferable();
+error ReceiptHolderAlreadyHasAccess();
 error AlreadyHasReceipt();
 error BuyerUaidRequired();
 error BuyerUaidMismatch();

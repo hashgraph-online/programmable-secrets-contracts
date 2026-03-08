@@ -86,6 +86,7 @@ export function handlePolicyCreated(event: PolicyCreatedEvent): void {
   policy.payout = event.params.payout;
   policy.paymentToken = event.params.paymentToken;
   policy.price = event.params.price;
+  policy.receiptTransferable = event.params.receiptTransferable;
   policy.conditionsHash = event.params.conditionsHash;
   policy.conditionCount = event.params.conditionCount;
   policy.metadataHash = event.params.metadataHash;

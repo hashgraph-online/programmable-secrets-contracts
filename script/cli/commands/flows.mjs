@@ -3,6 +3,7 @@ import { encodeAbiParameters, formatEther, keccak256, parseAbiParameters, toByte
 import { ACCESS_RECEIPT_ABI, CLI_COMMAND, IDENTITY_REGISTRY_ABI, PAYMENT_MODULE_ABI, POLICY_VAULT_ABI } from '../constants.mjs';
 import { decryptPayload, encryptPayload, sha256Hex } from '../crypto.mjs';
 import { requireEnvValue, resolvePreferredEnvValue } from '../env.mjs';
+import { CliError } from '../errors.mjs';
 import {
   buildAccessReceiptAddress,
   buildBuyerUaid,
@@ -23,7 +24,70 @@ import {
 import { emitResult, printField, printHeading, printStep, printSuccess } from '../output.mjs';
 import { readOption } from '../options.mjs';
 import { CLI_RUNTIME } from '../runtime.mjs';
-import { registerBrokerBackedAgent } from '../broker.mjs';
+import {
+  registerBrokerBackedAgent,
+  registerBrokerBackedAgentWithOptions,
+  resolveBrokerBackedAgentByWallet,
+} from '../broker.mjs';
+
+function parseEnvBoolean(value, fallback = false) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+async function resolveProviderUaid(networkId) {
+  const configuredProviderUaid = resolvePreferredEnvValue(
+    'PROGRAMMABLE_SECRETS_PROVIDER_UAID',
+    ['DEMO_PROVIDER_UAID'],
+  ).value;
+  if (configuredProviderUaid) {
+    return configuredProviderUaid;
+  }
+  const existingIdentity = await resolveBrokerBackedAgentByWallet({
+    networkId,
+    requireErc8004: false,
+    walletRole: 'provider',
+  });
+  if (existingIdentity?.uaid) {
+    return existingIdentity.uaid;
+  }
+  const shouldAutoRegister = parseEnvBoolean(
+    resolvePreferredEnvValue(
+      'PROGRAMMABLE_SECRETS_REGISTER_PROVIDER_AGENT',
+      ['DEMO_REGISTER_PROVIDER_AGENT'],
+      'true',
+    ).value,
+    true,
+  );
+  if (!shouldAutoRegister) {
+    throw new CliError(
+      'MISSING_PROVIDER_UAID',
+      'Provider UAID is required for policy seeding.',
+      'Set PROGRAMMABLE_SECRETS_PROVIDER_UAID or enable PROGRAMMABLE_SECRETS_REGISTER_PROVIDER_AGENT=1.',
+    );
+  }
+  const registration = await registerBrokerBackedAgentWithOptions({
+    includeErc8004Network: false,
+    networkId,
+    registerIfMissing: true,
+    reuseExisting: false,
+    walletRole: 'provider',
+  });
+  try {
+    return registration.brokerUaid;
+  } finally {
+    await registration.localAgentHandle.stop();
+  }
+}
 
 async function runUaidPolicyFlow({
   accessReceiptAddress,
@@ -37,7 +101,7 @@ async function runUaidPolicyFlow({
   providerWalletClient,
 }) {
   const publicClient = getPublicClient(chain);
-  const providerUaid = resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_PROVIDER_UAID', ['DEMO_PROVIDER_UAID']).value || 'did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab';
+  const providerUaid = await resolveProviderUaid(networkId);
   const priceWei = BigInt(resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_PRICE_WEI', ['DEMO_PRICE_WEI'], '10000000000000').value);
   const expiresAt = BigInt(Number(resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_EXPIRES_AT_UNIX', ['DEMO_EXPIRES_AT_UNIX'], '').value || '') || Math.floor(Date.now() / 1000) + 24 * 60 * 60);
   const plaintext = JSON.stringify({
@@ -83,7 +147,7 @@ async function runUaidPolicyFlow({
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
     functionName: 'createPolicyForDataset',
-    args: [BigInt(datasetId), providerWalletClient.account.address, zeroAddress, priceWei, metadataHash, conditions],
+    args: [BigInt(datasetId), providerWalletClient.account.address, zeroAddress, priceWei, false, metadataHash, conditions],
     chain,
     account: providerWalletClient.account,
   });
@@ -146,7 +210,8 @@ export async function runDirectMarketplaceFlow() {
   const ciphertextHash = keccak256(`0x${encryptedPayload.ciphertext.toString('hex')}`);
   const keyCommitment = keccak256(`0x${encryptedPayload.contentKey.toString('hex')}`);
   const metadataHash = keccak256(toBytes(JSON.stringify({ title: readOption(CLI_RUNTIME.globalOptions, ['dataset-title'], 'TSLA Volatility Model'), mimeType: 'application/json', plaintextHash: sha256Hex(plaintextBuffer) })));
-  const providerUaidHash = keccak256(toBytes(resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_PROVIDER_UAID', ['DEMO_PROVIDER_UAID'], 'did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab').value));
+  const providerUaid = await resolveProviderUaid(networkId);
+  const providerUaidHash = keccak256(toBytes(providerUaid));
   printHeading('Direct Marketplace Flow');
   printField('Network', chain.name);
   const datasetTx = await providerWalletClient.writeContract({
@@ -167,7 +232,7 @@ export async function runDirectMarketplaceFlow() {
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
     functionName: 'createPolicyForDataset',
-    args: [BigInt(datasetId), providerWalletClient.account.address, zeroAddress, priceWei, metadataHash, [{
+    args: [BigInt(datasetId), providerWalletClient.account.address, zeroAddress, priceWei, false, metadataHash, [{
       evaluator: resolveConditionEvaluatorAddress(networkId, 'timeRangeCondition'),
       configData: encodeAbiParameters(parseAbiParameters('(uint64 notBefore,uint64 notAfter) value'), [{ notBefore: 0n, notAfter: expiresAt }]),
     }]],

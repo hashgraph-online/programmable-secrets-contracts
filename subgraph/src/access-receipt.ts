@@ -1,6 +1,7 @@
 import {
   PaymentModuleUpdated as PaymentModuleUpdatedEvent,
   ReceiptMinted as ReceiptMintedEvent,
+  Transfer as TransferEvent,
 } from "../generated/AccessReceipt/AccessReceipt";
 import { Receipt } from "../generated/schema";
 import {
@@ -34,7 +35,9 @@ export function handleReceiptMinted(event: ReceiptMintedEvent): void {
   receipt.policy = policy.id;
   receipt.dataset = dataset.id;
   receipt.buyer = event.params.buyer;
+  receipt.holder = event.params.buyer;
   receipt.recipient = event.params.recipient;
+  receipt.receiptTransferable = event.params.receiptTransferable;
   receipt.paymentToken = event.params.paymentToken;
   receipt.price = event.params.price;
   receipt.purchasedAt = event.params.purchasedAt;
@@ -71,4 +74,19 @@ export function handlePaymentModuleUpdated(event: PaymentModuleUpdatedEvent): vo
   config.updatedAt = event.block.timestamp;
   config.updatedBlock = event.block.number;
   config.save();
+}
+
+export function handleTransfer(event: TransferEvent): void {
+  const receipt = Receipt.load(event.params.tokenId.toString());
+  if (receipt === null) {
+    return;
+  }
+
+  if (event.params.to.notEqual(event.params.from)) {
+    receipt.holder = event.params.to;
+    receipt.transactionHash = event.transaction.hash;
+    receipt.blockNumber = event.block.number;
+    receipt.blockTimestamp = event.block.timestamp;
+    receipt.save();
+  }
 }

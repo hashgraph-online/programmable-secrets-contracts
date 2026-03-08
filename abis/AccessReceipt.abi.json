@@ -125,6 +125,11 @@
             "internalType": "uint64"
           },
           {
+            "name": "receiptTransferable",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "ciphertextHash",
             "type": "bytes32",
             "internalType": "bytes32"
@@ -225,6 +230,11 @@
         "name": "purchasedAt",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "receiptTransferable",
+        "type": "bool",
+        "internalType": "bool"
       },
       {
         "name": "ciphertextHash",
@@ -356,6 +366,30 @@
   },
   {
     "type": "function",
+    "name": "receiptOfDatasetAndHolder",
+    "inputs": [
+      {
+        "name": "datasetId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "holder",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "receiptOfPolicyAndBuyer",
     "inputs": [
       {
@@ -365,6 +399,30 @@
       },
       {
         "name": "buyer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "receiptOfPolicyAndHolder",
+    "inputs": [
+      {
+        "name": "policyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "holder",
         "type": "address",
         "internalType": "address"
       }
@@ -708,6 +766,12 @@
         "internalType": "uint64"
       },
       {
+        "name": "receiptTransferable",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
         "name": "ciphertextHash",
         "type": "bytes32",
         "indexed": false,
@@ -886,6 +950,11 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ReceiptHolderAlreadyHasAccess",
+    "inputs": []
   },
   {
     "type": "error",

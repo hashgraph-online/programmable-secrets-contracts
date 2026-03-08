@@ -55,6 +55,7 @@ type Policy @entity(immutable: false) {
   payout: Bytes
   paymentToken: Bytes
   price: BigInt!
+  receiptTransferable: Boolean!
   conditionsHash: Bytes
   conditionCount: BigInt!
   metadataHash: Bytes
@@ -78,6 +79,7 @@ type AccessGrant @entity(immutable: true) {
   receiptTokenId: BigInt!
   buyer: Bytes!
   recipient: Bytes!
+  receiptTransferable: Boolean!
   paymentToken: Bytes!
   price: BigInt!
   purchasedAt: BigInt!
@@ -94,7 +96,9 @@ type Receipt @entity(immutable: false) {
   policy: Policy!
   dataset: Dataset!
   buyer: Bytes!
+  holder: Bytes!
   recipient: Bytes!
+  receiptTransferable: Boolean!
   paymentToken: Bytes!
   price: BigInt!
   purchasedAt: BigInt!

@@ -14,6 +14,7 @@ import {
     InvalidPrice,
     NotPolicyProvider,
     PolicyInactive,
+    ReceiptHolderAlreadyHasAccess,
     ReceiptNonTransferable
 } from "../src/Errors.sol";
 import {ProgrammableSecretsModularTestBase} from "./ProgrammableSecretsModularTestBase.sol";
@@ -24,10 +25,10 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
     bytes32 private constant DATASET_REGISTERED_SIG =
         keccak256("DatasetRegistered(uint256,address,bytes32,bytes32,bytes32,bytes32)");
     bytes32 private constant POLICY_CREATED_SIG =
-        keccak256("PolicyCreated(uint256,uint256,address,address,address,uint256,bytes32,uint32,bytes32,bytes32)");
+        keccak256("PolicyCreated(uint256,uint256,address,address,address,uint256,bool,bytes32,uint32,bytes32,bytes32)");
     bytes32 private constant POLICY_UPDATED_SIG = keccak256("PolicyUpdated(uint256,uint256,uint256,bool,bytes32)");
     bytes32 private constant ACCESS_GRANTED_SIG =
-        keccak256("AccessGranted(uint256,uint256,uint256,address,address,address,uint256,uint64,bytes32,bytes32)");
+        keccak256("AccessGranted(uint256,uint256,uint256,address,address,address,uint256,uint64,bool,bytes32,bytes32)");
 
     function testRegisterDatasetStoresFieldsAndEmitsEvent() public {
         vm.recordLogs();
@@ -112,7 +113,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         uint256 datasetId = _registerDataset();
 
         vm.recordLogs();
-        uint256 policyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false);
+        uint256 policyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false, false);
         Log[] memory entries = vm.getRecordedLogs();
 
         PolicyVault.Policy memory policy = policyVault.getPolicy(policyId);
@@ -123,6 +124,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         assertEqAddress(policy.paymentToken, address(0));
         assertEqUint(uint256(policy.price), uint256(1 ether));
         assertEqBool(policy.active, true);
+        assertEqBool(policy.receiptTransferable, false);
         assertEqUint(policy.datasetId, datasetId);
         assertEqUint(uint256(policy.conditionCount), uint256(0));
         assertEqBytes32(policy.metadataHash, POLICY_METADATA_HASH);
@@ -146,7 +148,9 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
         vm.prank(PROVIDER);
         vm.expectRevert(EvaluatorNotRegistered.selector);
-        policyVault.createPolicyForDataset(datasetId, PAYOUT, address(0), 1 ether, POLICY_METADATA_HASH, conditions);
+        policyVault.createPolicyForDataset(
+            datasetId, PAYOUT, address(0), 1 ether, false, POLICY_METADATA_HASH, conditions
+        );
     }
 
     function testUpdatePolicyOnlyProvider() public {
@@ -198,6 +202,7 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         assertEqUint(receipt.datasetId, policy.datasetId);
         assertEqAddress(receipt.buyer, BUYER);
         assertEqAddress(receipt.recipient, RECIPIENT);
+        assertEqBool(receipt.receiptTransferable, false);
         assertEqUint(entries.length, uint256(3));
         assertEqBytes32(entries[2].topics[0], ACCESS_GRANTED_SIG);
         assertEqUint(uint256(entries[2].topics[1]), policyId);
@@ -290,8 +295,8 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
 
     function testPurchaseRejectsSecondReceiptForSameDatasetAcrossPolicies() public {
         uint256 datasetId = _registerDataset();
-        uint256 firstPolicyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false);
-        uint256 secondPolicyId = _createTimeboundPolicyForDataset(datasetId, 2 ether, 0, false);
+        uint256 firstPolicyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false, false);
+        uint256 secondPolicyId = _createTimeboundPolicyForDataset(datasetId, 2 ether, 0, false, false);
         bytes[] memory runtimeInputs = _emptyRuntimeInputs(0);
 
         vm.prank(BUYER);
@@ -312,6 +317,39 @@ contract ProgrammableSecretsModularTest is ProgrammableSecretsModularTestBase {
         vm.prank(BUYER);
         vm.expectRevert(ReceiptNonTransferable.selector);
         accessReceipt.transferFrom(BUYER, OTHER_BUYER, receiptTokenId);
+    }
+
+    function testTransferableReceiptCanMoveAccessToNewHolder() public {
+        uint256 policyId = _createTransferableDatasetPolicy(1 ether, 0, false);
+        bytes[] memory runtimeInputs = _emptyRuntimeInputs(0);
+
+        vm.prank(BUYER);
+        uint256 receiptTokenId = paymentModule.purchase{value: 1 ether}(policyId, RECIPIENT, runtimeInputs);
+
+        vm.prank(BUYER);
+        accessReceipt.transferFrom(BUYER, OTHER_BUYER, receiptTokenId);
+
+        assertEqBool(paymentModule.hasAccess(policyId, BUYER), false);
+        assertEqBool(paymentModule.hasAccess(policyId, OTHER_BUYER), true);
+        assertEqUint(accessReceipt.receiptOfPolicyAndBuyer(policyId, BUYER), uint256(0));
+        assertEqUint(accessReceipt.receiptOfPolicyAndBuyer(policyId, OTHER_BUYER), receiptTokenId);
+    }
+
+    function testTransferableReceiptRejectsTransferToHolderWithExistingAccess() public {
+        uint256 datasetId = _registerDataset();
+        uint256 firstPolicyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false, true);
+        uint256 secondPolicyId = _createTimeboundPolicyForDataset(datasetId, 1 ether, 0, false, false);
+        bytes[] memory runtimeInputs = _emptyRuntimeInputs(0);
+
+        vm.prank(BUYER);
+        uint256 firstReceiptId = paymentModule.purchase{value: 1 ether}(firstPolicyId, RECIPIENT, runtimeInputs);
+
+        vm.prank(OTHER_BUYER);
+        paymentModule.purchase{value: 1 ether}(secondPolicyId, RECIPIENT, runtimeInputs);
+
+        vm.prank(BUYER);
+        vm.expectRevert(ReceiptHolderAlreadyHasAccess.selector);
+        accessReceipt.transferFrom(BUYER, OTHER_BUYER, firstReceiptId);
     }
 
     function testHasAccessPersistsAfterPurchaseTimeConditionExpires() public {

@@ -27,6 +27,7 @@ abstract contract PolicyVaultEvents {
         address payout,
         address paymentToken,
         uint256 price,
+        bool receiptTransferable,
         bytes32 conditionsHash,
         uint32 conditionCount,
         bytes32 metadataHash,
@@ -48,6 +49,7 @@ abstract contract PaymentModuleEvents {
         address paymentToken,
         uint256 price,
         uint64 purchasedAt,
+        bool receiptTransferable,
         bytes32 ciphertextHash,
         bytes32 keyCommitment
     );
@@ -66,6 +68,7 @@ abstract contract AccessReceiptEvents {
         address paymentToken,
         uint256 price,
         uint64 purchasedAt,
+        bool receiptTransferable,
         bytes32 ciphertextHash,
         bytes32 keyCommitment
     );

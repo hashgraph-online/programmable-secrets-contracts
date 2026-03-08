@@ -48,6 +48,7 @@ export async function createTimeboundPolicyCommand(options) {
   const payout = getAddress(readOption(options, ['payout'], walletClient.account.address));
   const priceWei = resolvePriceWei(options);
   const expiresAt = resolveExpiryUnix(options);
+  const receiptTransferable = parseBooleanOption(readOption(options, ['receipt-transferable'], false), false);
   const allowlistEnabled = parseBooleanOption(readOption(options, ['allowlist-enabled'], false), false);
   const metadataHash = resolveMetadataHash(options);
   const allowlistAccounts = resolveAllowlistAccounts(options);
@@ -70,7 +71,7 @@ export async function createTimeboundPolicyCommand(options) {
   const preview = {
     action: 'Create Timebound Policy',
     address: buildPolicyVaultAddress(networkId),
-    args: [datasetId, payout, zeroAddress, priceWei, metadataHash, conditions],
+    args: [datasetId, payout, zeroAddress, priceWei, receiptTransferable, metadataHash, conditions],
     contract: 'PolicyVault',
     functionName: 'createPolicyForDataset',
     network: chain.name,
@@ -86,7 +87,7 @@ export async function createTimeboundPolicyCommand(options) {
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
     functionName: 'createPolicyForDataset',
-    args: [datasetId, payout, zeroAddress, priceWei, metadataHash, conditions],
+    args: [datasetId, payout, zeroAddress, priceWei, receiptTransferable, metadataHash, conditions],
     chain,
     account: walletClient.account,
   });
@@ -118,6 +119,7 @@ export async function createUaidPolicyCommand(options) {
   const payout = getAddress(readOption(options, ['payout'], walletClient.account.address));
   const priceWei = resolvePriceWei(options);
   const expiresAt = resolveExpiryUnix(options);
+  const receiptTransferable = parseBooleanOption(readOption(options, ['receipt-transferable'], false), false);
   const allowlistEnabled = parseBooleanOption(readOption(options, ['allowlist-enabled'], false), false);
   const metadataHash = resolveMetadataHash(options);
   const allowlistAccounts = resolveAllowlistAccounts(options);
@@ -151,7 +153,7 @@ export async function createUaidPolicyCommand(options) {
   const preview = {
     action: 'Create UAID Policy',
     address: buildPolicyVaultAddress(networkId),
-    args: [datasetId, payout, zeroAddress, priceWei, metadataHash, conditions],
+    args: [datasetId, payout, zeroAddress, priceWei, receiptTransferable, metadataHash, conditions],
     contract: 'PolicyVault',
     functionName: 'createPolicyForDataset',
     network: chain.name,
@@ -167,7 +169,7 @@ export async function createUaidPolicyCommand(options) {
     address: buildPolicyVaultAddress(networkId),
     abi: POLICY_VAULT_ABI,
     functionName: 'createPolicyForDataset',
-    args: [datasetId, payout, zeroAddress, priceWei, metadataHash, conditions],
+    args: [datasetId, payout, zeroAddress, priceWei, receiptTransferable, metadataHash, conditions],
     chain,
     account: walletClient.account,
   });
@@ -292,12 +294,14 @@ export async function importPolicyCommand(options) {
   const payout = getAddress(policy.payout || walletClient.account.address);
   const priceWei = parseBigIntValue(`${policy.priceWei ?? policy.price ?? 0}`, 'price');
   const metadataHash = policy.metadataHash;
+  const receiptTransferable = policy.receiptTransferable === true;
   const importedConditions = Array.isArray(policy.conditions) ? policy.conditions : [];
   const args = [
     datasetId,
     payout,
     zeroAddress,
     priceWei,
+    receiptTransferable,
     metadataHash,
     importedConditions.map((condition) => ({
       evaluator: getAddress(condition.evaluator),

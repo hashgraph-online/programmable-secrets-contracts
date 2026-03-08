@@ -318,6 +318,7 @@ export function printPolicySummary(policyId, policy) {
   printField('Payout', policy.payout);
   printField('Price', `${formatEther(policy.price)} ETH (${policy.price} wei)`);
   printField('Active', policy.active);
+  printField('Receipt transferable', policy.receiptTransferable);
   printField('Allowlist', policy.allowlistEnabled);
   printField('Conditions', policy.conditionCount);
   printField('Created', formatTimestamp(policy.createdAt));
@@ -366,6 +367,7 @@ export function serializeDataset(datasetId, dataset, policyIds = []) {
 export function serializePolicy(policyId, policy) {
   return {
     active: policy.active,
+    receiptTransferable: policy.receiptTransferable,
     allowlistEnabled: policy.allowlistEnabled,
     createdAt: policy.createdAt,
     conditionCount: policy.conditionCount,
@@ -402,6 +404,7 @@ export function serializeReceipt(receiptTokenId, receipt) {
     policyId: receipt.policyId,
     priceWei: receipt.price,
     purchasedAt: receipt.purchasedAt,
+    receiptTransferable: receipt.receiptTransferable,
     receiptId: receiptTokenId,
     recipient: receipt.recipient,
   };

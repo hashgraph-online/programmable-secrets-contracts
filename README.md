@@ -8,7 +8,7 @@ npx programmable-secret help
 
 Programmable Secrets is a receipt-backed entitlement protocol for finance-agent workflows.
 Providers commit encrypted market data, issuer materials, research, or private tool access onchain.
-Buyers satisfy a dataset policy in the shared vault, mint a non-transferable access receipt, and then request the buyer-bound key envelope from the offchain key release service.
+Buyers satisfy a dataset policy in the shared vault, mint an access receipt, and then request the buyer-bound key envelope from the offchain key release service.
 
 This package is the contract source of truth for:
 - `PolicyVault`
@@ -27,7 +27,7 @@ This package is the contract source of truth for:
 | --- | --- |
 | `PolicyVault` | Shared registry for provider-owned datasets plus attached policies. Each policy stores a list of registered policy evaluator modules and immutable condition config bytes. |
 | `PaymentModule` | Validates purchase conditions by calling each evaluator registered on the selected policy, settles native ETH, mints the access receipt, and resolves active entitlement state. |
-| `AccessReceipt` | Non-transferable ERC-721 entitlement proving a buyer satisfied a specific dataset policy. |
+| `AccessReceipt` | ERC-721 entitlement proving a buyer satisfied a specific dataset policy. Transferability is fixed per policy at mint time. |
 | `TimeRangeCondition` | Built-in policy evaluator that enforces `notBefore` / `notAfter` purchase windows. |
 | `UaidOwnershipCondition` | Built-in policy evaluator that enforces ERC-8004 wallet ownership plus exact buyer UAID match. |
 | `AddressAllowlistCondition` | Built-in policy evaluator that enforces a provider-supplied wallet allowlist. |
@@ -82,7 +82,7 @@ Primary functions:
 - `setEvaluatorFeeRecipient(address newFeeRecipient)` owner-only
 - `registerDataset(bytes32 ciphertextHash, bytes32 keyCommitment, bytes32 metadataHash, bytes32 providerUaidHash)`
 - `setDatasetActive(uint256 datasetId, bool active)`
-- `createPolicyForDataset(uint256 datasetId, address payout, address paymentToken, uint96 price, bytes32 metadataHash, PolicyConditionInput[] conditions)`
+- `createPolicyForDataset(uint256 datasetId, address payout, address paymentToken, uint96 price, bool receiptTransferable, bytes32 metadataHash, PolicyConditionInput[] conditions)`
 - `updatePolicy(uint256 policyId, uint96 newPrice, bool active, bytes32 newMetadataHash)`
 - `getDataset(uint256 datasetId)`
 - `getDatasetPolicyCount(uint256 datasetId)`
@@ -126,7 +126,7 @@ Events:
 Primary functions:
 - `constructor(address initialOwner)`
 - `setPaymentModule(address newPaymentModule)`
-- `mintReceipt(address buyer, address recipient, uint256 policyId, uint256 datasetId, address paymentToken, uint96 price, uint64 purchasedAt, bytes32 ciphertextHash, bytes32 keyCommitment)`
+- `mintReceipt(address buyer, address recipient, uint256 policyId, uint256 datasetId, address paymentToken, uint96 price, uint64 purchasedAt, bool receiptTransferable, bytes32 ciphertextHash, bytes32 keyCommitment)`
 - `hasAccess(uint256 policyId, address buyer)`
 - `receiptOfPolicyAndBuyer(uint256 policyId, address buyer)`
 - `getReceipt(uint256 receiptTokenId)`
@@ -148,8 +148,10 @@ Events:
 - `PaymentModule.purchase` loops over the selected policy’s stored evaluator list and passes the caller-supplied `conditionRuntimeInputs[index]` to each evaluator.
 - `PolicyVault` owns dataset and policy metadata plus provider-controlled mutability.
 - `PaymentModule` is the only contract allowed to mint receipts.
-- One buyer can hold at most one receipt per policy.
-- Receipts are non-transferable.
+- One wallet can hold at most one active receipt per policy and per dataset.
+- Receipt transferability is decided when the policy is created and is immutable for receipts minted from that policy.
+- Non-transferable receipts stay buyer-bound.
+- Transferable receipts move active access with the token and cannot be transferred to a wallet that already has access to the same dataset.
 - Every receipt token resolves to the same metadata URI: `ipfs://bafkreibw3osbcrk7w522tcjuz5a4ihffd3bfbjkwmfso5esxyfml2cfal4`.
 - Condition modules own their own validation rules. For example, `TimeRangeCondition` treats `notAfter == block.timestamp` as expired.
 - UAID-bound purchases pass the exact buyer UAID string in the runtime input consumed by `UaidOwnershipCondition`.
@@ -171,6 +173,9 @@ The default deployment registers three built-ins:
 | `AddressAllowlistCondition` | ABI-encoded `address[]` | empty bytes |
 
 Custom modules can implement `IPolicyCondition` and register themselves through `registerPolicyEvaluator(...)` after paying the fee.
+
+When creating a policy, set `receiptTransferable = true` only if you want the ERC-721 itself to carry the live entitlement between wallets.
+For most data-sales flows, leave it `false` so access stays tied to the original buyer.
 
 ### Custom Evaluator Example: ETH Balance > 0.1 ETH
 
@@ -231,6 +236,8 @@ programmable-secret policies import \
   --wallet provider \
   --file /tmp/eth-balance-policy.json
 ```
+
+To make that policy transferable, set `"receiptTransferable": true` in the imported JSON or pass `--receipt-transferable true` when using `policies create-timebound` or `policies create-uaid`.
 
 5. Buyer purchases and proves the unlock:
 

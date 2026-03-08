@@ -33,6 +33,7 @@ export function handleAccessGranted(event: AccessGrantedEvent): void {
   grant.receiptTokenId = event.params.receiptTokenId;
   grant.buyer = event.params.buyer;
   grant.recipient = event.params.recipient;
+  grant.receiptTransferable = event.params.receiptTransferable;
   grant.paymentToken = event.params.paymentToken;
   grant.price = event.params.price;
   grant.purchasedAt = event.params.purchasedAt;
@@ -66,7 +67,9 @@ export function handleAccessGranted(event: AccessGrantedEvent): void {
   receipt.policy = policy.id;
   receipt.dataset = dataset.id;
   receipt.buyer = event.params.buyer;
+  receipt.holder = event.params.buyer;
   receipt.recipient = event.params.recipient;
+  receipt.receiptTransferable = event.params.receiptTransferable;
   receipt.paymentToken = event.params.paymentToken;
   receipt.price = event.params.price;
   receipt.purchasedAt = event.params.purchasedAt;

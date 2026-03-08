@@ -6,6 +6,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_POLICY_CONDITIONS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "UPGRADE_INTERFACE_VERSION",
     "inputs": [],
     "outputs": [
@@ -47,6 +60,11 @@
         "name": "price",
         "type": "uint96",
         "internalType": "uint96"
+      },
+      {
+        "name": "receiptTransferable",
+        "type": "bool",
+        "internalType": "bool"
       },
       {
         "name": "metadataHash",
@@ -280,6 +298,11 @@
           },
           {
             "name": "active",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "receiptTransferable",
             "type": "bool",
             "internalType": "bool"
           },
@@ -876,6 +899,12 @@
         "internalType": "uint256"
       },
       {
+        "name": "receiptTransferable",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
         "name": "conditionsHash",
         "type": "bytes32",
         "indexed": false,
@@ -1193,6 +1222,22 @@
     "type": "error",
     "name": "PolicyNotFound",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyPolicyConditions",
+    "inputs": [
+      {
+        "name": "provided",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxAllowed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
