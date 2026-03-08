@@ -5,7 +5,7 @@ import {
   AIAgentType,
   ProfileType,
   RegistryBrokerClient,
-} from './registry-broker-client.mjs';
+} from '@hashgraphonline/standards-sdk';
 import {
   CLI_COMMAND,
   DEFAULT_COMMUNICATION_PROTOCOL,
