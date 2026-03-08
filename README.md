@@ -52,8 +52,6 @@ The hackathon build spans multiple repositories. This contracts repository is th
 | --- | --- |
 | [`hashgraph-online/programmable-secrets-fe`](https://github.com/hashgraph-online/programmable-secrets-fe) | User-facing frontend for provider and buyer workflows. |
 | [`hashgraph-online/programmable-secrets-skill`](https://github.com/hashgraph-online/programmable-secrets-skill) | HCS-26 operator skill package used by agents and CLI-driven flows. |
-| [`hashgraph-online/registry-broker`](https://github.com/hashgraph-online/registry-broker) | Broker integration used by `flow:broker` and UAID-linked agent workflows. |
-| [`hashgraph-online/points-portal`](https://github.com/hashgraph-online/points-portal) | Portal integration surface consuming contract and subgraph outputs. |
 | [`erc-8004/erc-8004-contracts`](https://github.com/erc-8004/erc-8004-contracts) | Upstream ERC-8004 registry contracts used for identity-gated policy checks. |
 
 For a full integration matrix and ownership boundaries, see [`docs/hackathon-repo-map.md`](docs/hackathon-repo-map.md).
@@ -579,7 +577,7 @@ If wallet or broker keys are missing, bootstrap a local env file from the runnin
 programmable-secret env-bootstrap
 ```
 
-This writes `.env.local` when it does not already exist and pulls common workflow keys from `registry-broker-registry-broker-1` when available.
+This writes `.env.local` when it does not already exist and can pull common workflow keys from a locally running broker container when available.
 Set `PROGRAMMABLE_SECRETS_ENV_OUTPUT_PATH` if you want to generate a different file.
 
 Run the direct identity flow:
