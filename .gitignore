@@ -9,3 +9,4 @@ results.sarif
 node_modules/
 *.tgz
 node_modules
+stylus/**/target/

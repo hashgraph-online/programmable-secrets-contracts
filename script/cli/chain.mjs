@@ -271,6 +271,30 @@ export async function readPolicyConditions({ publicClient, networkId, policyId }
 }
 
 export function buildConditionRuntimeInputs(conditions, options) {
+  const runtimeInputsFile = readOption(options, ['runtime-inputs-file'], null);
+  if (runtimeInputsFile) {
+    const payload = readJsonFile(runtimeInputsFile, 'condition runtime inputs');
+    const runtimeInputs = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.runtimeInputs)
+        ? payload.runtimeInputs
+        : null;
+    if (!runtimeInputs) {
+      throw new CliError(
+        'INVALID_RUNTIME_INPUTS_FILE',
+        `Unsupported runtime input payload in ${runtimeInputsFile}.`,
+        'Expected a JSON array of hex bytes or an object with a runtimeInputs array.',
+      );
+    }
+    if (runtimeInputs.length !== conditions.length) {
+      throw new CliError(
+        'INVALID_RUNTIME_INPUTS_LENGTH',
+        `Runtime input file ${runtimeInputsFile} contains ${runtimeInputs.length} item(s), but the policy requires ${conditions.length}.`,
+        'Regenerate the runtime payload for the current policy or pass the correct condition runtime array.',
+      );
+    }
+    return runtimeInputs;
+  }
   const buyerUaid = readOption(options, ['buyer-uaid'], '').trim();
   const runtimeInputs = [];
   for (const condition of conditions) {

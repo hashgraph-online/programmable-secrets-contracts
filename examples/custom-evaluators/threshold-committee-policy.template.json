@@ -1,0 +1,15 @@
+{
+  "policy": {
+    "datasetId": 0,
+    "payout": "0x0000000000000000000000000000000000000000",
+    "priceWei": "10000000000000",
+    "metadataHash": "0x6679c25d3d59f9e3a2e0a21f8d8d817f44173784e4dcb73b76a654ff4fd3c9b8",
+    "receiptTransferable": false,
+    "conditions": [
+      {
+        "evaluator": "0x0000000000000000000000000000000000000000",
+        "configData": "0x"
+      }
+    ]
+  }
+}

@@ -7,9 +7,10 @@ import { emitJson } from './output.mjs';
 import { initializeRuntime, CLI_RUNTIME } from './runtime.mjs';
 import { runInitCommand, runProfilesCommand, runTemplatesCommand, runCompletionsCommand, runStart, runDoctor, showContracts } from './commands/system.mjs';
 import { runExamplesCommand } from './commands/examples.mjs';
+import { thresholdConfigCommand, thresholdRuntimeCommand } from './commands/attestations.mjs';
 import { listPoliciesLegacyCommand, deactivateAllCommand, updatePricesCommand } from './commands/admin.mjs';
 import { listDatasetsCommand, getDatasetCommand, exportDatasetCommand, importDatasetCommand, registerDatasetCommand, setDatasetActiveCommand } from './commands/datasets.mjs';
-import { listPoliciesCommand, getPolicyCommand, listEvaluatorsCommand, getEvaluatorCommand } from './commands/policies-read.mjs';
+import { listPoliciesCommand, getPolicyCommand, listEvaluatorsCommand, getEvaluatorCommand, registerEvaluatorCommand } from './commands/policies-read.mjs';
 import { createTimeboundPolicyCommand, createUaidPolicyCommand, exportPolicyCommand, importPolicyCommand, setPolicyAllowlistCommand, updatePolicyCommand } from './commands/policies-write.mjs';
 import { purchasePolicyCommand, accessPolicyCommand, accessDatasetCommand, receiptByPolicyCommand, receiptByDatasetCommand, getReceiptCommand, registerIdentityCommand } from './commands/access.mjs';
 import { encryptBundleCommand, decryptBundleCommand, verifyBundleCommand } from './commands/krs.mjs';
@@ -85,7 +86,18 @@ async function runEvaluatorsCommand(tokens) {
   switch (subcommand) {
     case 'list': return listEvaluatorsCommand(options);
     case 'get': return getEvaluatorCommand(options);
+    case 'register': return registerEvaluatorCommand(options);
     default: throw new CliError('UNKNOWN_SUBCOMMAND', `Unknown evaluators command "${subcommand}".`, `See "${CLI_COMMAND} help evaluators".`);
+  }
+}
+
+async function runAttestationsCommand(tokens) {
+  const { positionals, options } = parseCliArgs(tokens);
+  const subcommand = positionals[0] || 'threshold-config';
+  switch (subcommand) {
+    case 'threshold-config': return thresholdConfigCommand(options);
+    case 'threshold-runtime': return thresholdRuntimeCommand(options);
+    default: throw new CliError('UNKNOWN_SUBCOMMAND', `Unknown attestations command "${subcommand}".`, `See "${CLI_COMMAND} help attestations".`);
   }
 }
 
@@ -119,6 +131,7 @@ async function dispatchCommand(commandName, tokens, forcePreview = false) {
     case 'flow:uaid': return runDirectUaidFlow();
     case 'flow:broker': return demoBrokerUaidFlow();
     case 'contracts': return showContracts(parsed.options);
+    case 'attestations': return runAttestationsCommand(effectiveTokens);
     case 'evaluators': return runEvaluatorsCommand(effectiveTokens);
     case 'datasets': return runDatasetsCommand(effectiveTokens);
     case 'policies': return runPoliciesCommand(effectiveTokens);

@@ -34,12 +34,20 @@ function showCommandTopic(topic) {
         `Update policy: ${CLI_COMMAND} policies update --policy-id 1 --price-eth 0.00002 --active true --metadata-json '{"title":"Updated policy"}'`,
       ]);
       return;
+    case 'attestations':
+      printHeading('attestations');
+      printCommandUsage([
+        `Build threshold committee config: ${CLI_COMMAND} attestations threshold-config --policy-context-text "committee-release-v1" --max-duration-minutes 60 --threshold 2 --committee 0xSigner1,0xSigner2,0xSigner3`,
+        `Build threshold committee runtime: ${CLI_COMMAND} attestations threshold-runtime --policy-id 1 --buyer 0xBuyer --evaluator 0xEvaluator --policy-context-text "committee-release-v1" --duration-minutes 15 --committee-private-keys-file ./committee-signers.local.json`,
+      ]);
+      return;
     case 'examples':
       printHeading('examples');
       printCommandUsage([
         `List examples: ${CLI_COMMAND} examples list`,
         `Show the two-agent flow: ${CLI_COMMAND} examples show --name two-agent-sale`,
         `Show the custom evaluator flow: ${CLI_COMMAND} examples show --name custom-eth-balance-policy`,
+        `Show the Stylus threshold flow: ${CLI_COMMAND} examples show --name custom-threshold-committee-policy`,
       ]);
       return;
     case 'templates':
@@ -87,6 +95,7 @@ export function showHelp(topic = null) {
   console.log('');
   console.log('Contract commands:');
   console.log(`  ${CLI_COMMAND} contracts    Show deployed contract addresses`);
+  console.log(`  ${CLI_COMMAND} attestations Build reusable runtime/config payloads for advanced policy conditions`);
   console.log(`  ${CLI_COMMAND} evaluators   Inspect registered evaluator modules and trust metadata`);
   console.log(`  ${CLI_COMMAND} datasets ... Register, inspect, and activate datasets`);
   console.log(`  ${CLI_COMMAND} policies ... Create, inspect, update, and export/import evaluator-backed policies`);
@@ -103,5 +112,6 @@ export function showHelp(topic = null) {
   console.log('Topic help:');
   console.log(`  ${CLI_COMMAND} help datasets`);
   console.log(`  ${CLI_COMMAND} help policies`);
+  console.log(`  ${CLI_COMMAND} help attestations`);
   console.log(`  ${CLI_COMMAND} help examples`);
 }

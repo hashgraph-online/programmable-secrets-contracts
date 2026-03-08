@@ -31,6 +31,7 @@ This package is the contract source of truth for:
 | `TimeRangeCondition` | Built-in policy evaluator that enforces `notBefore` / `notAfter` purchase windows. |
 | `UaidOwnershipCondition` | Built-in policy evaluator that enforces ERC-8004 wallet ownership plus exact buyer UAID match. |
 | `AddressAllowlistCondition` | Built-in policy evaluator that enforces a provider-supplied wallet allowlist. |
+| `ThresholdCommitteeCondition` | Example Stylus evaluator that verifies a quorum of committee attestations before purchase. |
 | external `IdentityRegistry` | ERC-8004 registry address referenced by `UaidOwnershipCondition` to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
 
 The intended app entrypoints are:
@@ -257,6 +258,127 @@ Proof in this repo:
 - it proves a buyer below the threshold reverts with `PolicyConditionFailed(0)`
 - it proves zero-threshold configs are rejected
 
+### Custom Evaluator Example: Stylus Threshold Committee
+
+The repo also includes a Stylus evaluator in `stylus/threshold-committee-condition`.
+It verifies a quorum of committee signatures over:
+- evaluator address
+- policy vault address
+- chain id
+- policy id
+- buyer
+- recipient
+- policy context hash
+- attestation deadline
+
+The checked-in app-facing ABI is `abis/ThresholdCommitteeCondition.abi.json`.
+
+Local build and RPC validation:
+
+```bash
+pnpm run stylus:fmt
+pnpm run stylus:test
+pnpm run stylus:clippy
+pnpm run stylus:build
+pnpm run stylus:check
+```
+
+End-to-end operator flow on Arbitrum Sepolia:
+
+1. Deploy the Stylus evaluator:
+
+```bash
+cd stylus/threshold-committee-condition
+cargo stylus deploy \
+  --endpoint https://sepolia-rollup.arbitrum.io/rpc \
+  --private-key-path ./.keys/provider.key \
+  --max-fee-per-gas-gwei 1
+```
+
+2. Register it through `PolicyVault` with the public `0.05 ETH` evaluator fee:
+
+```bash
+programmable-secret evaluators register \
+  --network arbitrum-sepolia \
+  --wallet provider \
+  --evaluator $EVALUATOR_ADDRESS \
+  --metadata-json '{"name":"threshold-committee-condition","implementation":"stylus","kind":"threshold-committee"}'
+```
+
+3. Encrypt and register the dataset:
+
+```bash
+programmable-secret krs encrypt \
+  --plaintext-file ./examples/two-agent-sale/agent-a-signal.json \
+  --title "Threshold committee signal" \
+  --provider-uaid did:uaid:hol:committee-provider \
+  --output ./examples/custom-evaluators/threshold-committee-bundle.json
+
+programmable-secret datasets register \
+  --network arbitrum-sepolia \
+  --wallet provider \
+  --bundle-file ./examples/custom-evaluators/threshold-committee-bundle.json
+```
+
+4. Build the condition config and import the policy:
+
+```bash
+programmable-secret attestations threshold-config \
+  --policy-context-text "committee-release-v1" \
+  --max-duration-minutes 60 \
+  --threshold 2 \
+  --committee 0xSigner1,0xSigner2,0xSigner3 \
+  --output /tmp/threshold-committee-config.json
+
+jq --arg evaluator "$EVALUATOR_ADDRESS" \
+   --argjson datasetId <dataset-id> \
+   --slurpfile cfg /tmp/threshold-committee-config.json \
+   '.policy.datasetId = $datasetId
+    | .policy.conditions[0].evaluator = $evaluator
+    | .policy.conditions[0].configData = $cfg[0].configData' \
+   ./examples/custom-evaluators/threshold-committee-policy.template.json \
+   > /tmp/threshold-committee-policy.json
+
+programmable-secret policies import \
+  --network arbitrum-sepolia \
+  --wallet provider \
+  --file /tmp/threshold-committee-policy.json
+```
+
+5. Generate runtime attestations, purchase, and verify access:
+
+```bash
+programmable-secret attestations threshold-runtime \
+  --network arbitrum-sepolia \
+  --policy-id <policy-id> \
+  --buyer <buyer-wallet> \
+  --evaluator $EVALUATOR_ADDRESS \
+  --policy-context-text "committee-release-v1" \
+  --duration-minutes 15 \
+  --committee-private-keys-file ./committee-signers.local.json \
+  --output /tmp/threshold-committee-runtime.json
+
+programmable-secret purchase \
+  --network arbitrum-sepolia \
+  --policy-id <policy-id> \
+  --wallet agent \
+  --runtime-inputs-file /tmp/threshold-committee-runtime.json
+
+programmable-secret receipts get \
+  --network arbitrum-sepolia \
+  --receipt-id <receipt-id>
+
+programmable-secret access policy \
+  --network arbitrum-sepolia \
+  --policy-id <policy-id> \
+  --buyer <buyer-wallet>
+```
+
+Proof in this repo:
+- `__tests__/threshold-committee-cli.test.mjs` covers the CLI config/runtime encoders
+- the checked-in `custom-threshold-committee-policy` example exercises the full command flow
+- the evaluator was live-tested on Arbitrum Sepolia by deploying it, registering it through the CLI, importing a policy, generating runtime attestations, and purchasing the policy end to end
+
 ## Upgrade Model
 
 - `PolicyVault` is deployed behind `ERC1967Proxy` using UUPS.
@@ -270,13 +392,36 @@ Operational guidance:
 
 ## Local Verification
 
-Run the full contract suite:
+Install dependencies first:
+
+```bash
+pnpm install
+```
+
+Run the Solidity suite:
 
 ```bash
 forge fmt --check
 forge lint
 forge build --sizes --skip script
 forge test -vvv
+```
+
+Run the CLI suite:
+
+```bash
+pnpm run help
+pnpm run test:cli
+```
+
+Run the Stylus suite:
+
+```bash
+pnpm run stylus:fmt
+pnpm run stylus:test
+pnpm run stylus:clippy
+pnpm run stylus:build
+pnpm run stylus:check
 ```
 
 Regenerate checked-in ABIs:
@@ -289,6 +434,7 @@ forge inspect --json PaymentModule abi > abis/PaymentModule.abi.json
 forge inspect --json PolicyVault abi > abis/PolicyVault.abi.json
 forge inspect --json TimeRangeCondition abi > abis/TimeRangeCondition.abi.json
 forge inspect --json UaidOwnershipCondition abi > abis/UaidOwnershipCondition.abi.json
+cd stylus/threshold-committee-condition && cargo stylus export-abi
 ```
 
 ## CLI Workflows
@@ -316,6 +462,12 @@ There is also a custom evaluator walkthrough:
 
 ```bash
 programmable-secret examples show --name custom-eth-balance-policy
+```
+
+And a Stylus threshold committee walkthrough:
+
+```bash
+programmable-secret examples show --name custom-threshold-committee-policy
 ```
 
 The package also exposes a first-class binary:
@@ -552,6 +704,10 @@ The GitHub workflow `.github/workflows/deploy-arbitrum-sepolia.yml` performs the
 - `deployments/robinhood-testnet.json`
 - `deployments/arbitrum-sepolia.json`
 
+The repo also includes `.github/workflows/deploy-threshold-committee-evaluator.yml` for manual Stylus evaluator deployment to:
+- `arbitrum-sepolia`
+- `robinhood-testnet`
+
 Each manifest is expected to record:
 - `contracts.policyVault.proxyAddress`
 - `contracts.policyVault.implementationAddress`
@@ -598,6 +754,7 @@ Checked-in app-facing ABIs:
 - `abis/PolicyVault.abi.json`
 - `abis/PaymentModule.abi.json`
 - `abis/AccessReceipt.abi.json`
+- `abis/ThresholdCommitteeCondition.abi.json`
 
 These are the files the broker and portal should consume for code generation, client reads, and transaction encoding.
 
@@ -632,6 +789,14 @@ Workflows:
 - `Foundry CI`
 - `Solidity Security`
 - `Deploy EVM Testnet`
+- `Deploy Threshold Committee Evaluator`
+
+`Foundry CI` also runs the packaged CLI smoke path plus the Stylus validation pipeline:
+- `pnpm run test:cli`
+- `pnpm run stylus:fmt`
+- `pnpm run stylus:test`
+- `pnpm run stylus:clippy`
+- `pnpm run stylus:build`
 
 Required deployment environment secrets:
 - `ARBITRUM_SEPOLIA_RPC_URL`

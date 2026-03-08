@@ -27,6 +27,7 @@ test('help exposes the examples command family', () => {
   const result = runCli(['help']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /\bexamples\b/);
+  assert.match(result.stdout, /\battestations\b/);
 });
 
 test('examples list exposes the two-agent sale flow', () => {
@@ -35,6 +36,7 @@ test('examples list exposes the two-agent sale flow', () => {
   assert.equal(payload.kind, 'examples');
   assert.ok(payload.payload.examples['two-agent-sale']);
   assert.ok(payload.payload.examples['custom-eth-balance-policy']);
+  assert.ok(payload.payload.examples['custom-threshold-committee-policy']);
 });
 
 test('examples show prints a buyer unlock flow with CLI commands', () => {
@@ -66,4 +68,28 @@ test('examples show prints the custom evaluator deployment flow', () => {
   assert.equal(commands.some((command) => command.includes('forge create src/EthBalanceCondition.sol:EthBalanceCondition')), true);
   assert.equal(commands.some((command) => command.includes('registerPolicyEvaluator(address,bytes32)')), true);
   assert.equal(commands.some((command) => command.includes('policies import')), true);
+});
+
+test('examples show prints the Stylus threshold committee evaluator flow', () => {
+  const result = runCli(['examples', 'show', '--name', 'custom-threshold-committee-policy', '--json']);
+  const payload = parseJsonOutput(result);
+
+  assert.equal(payload.kind, 'example');
+  assert.equal(payload.payload.name, 'custom-threshold-committee-policy');
+
+  const commands = payload.payload.example.steps.flatMap((step) => step.commands);
+  assert.equal(commands.some((command) => command.includes('cargo stylus deploy')), true);
+  assert.equal(commands.some((command) => command.includes('--endpoint https://sepolia-rollup.arbitrum.io/rpc')), true);
+  assert.equal(commands.some((command) => command.includes('--max-fee-per-gas-gwei 1')), true);
+  assert.equal(commands.some((command) => command.includes('evaluators register')), true);
+  assert.equal(commands.some((command) => command.includes('--network arbitrum-sepolia')), true);
+  assert.equal(commands.some((command) => command.includes('attestations threshold-config')), true);
+  assert.equal(commands.some((command) => command.includes('attestations threshold-runtime')), true);
+  assert.equal(commands.some((command) => command.includes('access policy --network arbitrum-sepolia')), true);
+  assert.equal(
+    commands.some(
+      (command) => command.includes('purchase') && command.includes('--policy-id') && command.includes('--runtime-inputs-file'),
+    ),
+    true,
+  );
 });

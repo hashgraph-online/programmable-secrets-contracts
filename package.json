@@ -40,14 +40,20 @@
     "deployments",
     "examples",
     "script/cli",
-    "script/manage-policies.mjs"
+    "script/manage-policies.mjs",
+    "stylus/threshold-committee-condition"
   ],
   "scripts": {
     "cli": "node --import tsx script/manage-policies.mjs",
     "help": "node --import tsx script/manage-policies.mjs help",
     "start": "node --import tsx script/manage-policies.mjs start",
     "doctor": "node --import tsx script/manage-policies.mjs doctor",
-    "test:cli": "node --test __tests__/manage-policies-cli.test.mjs",
+    "test:cli": "node --test __tests__/*.test.mjs",
+    "stylus:fmt": "cd stylus/threshold-committee-condition && cargo fmt --check",
+    "stylus:test": "cd stylus/threshold-committee-condition && cargo check --tests",
+    "stylus:clippy": "cd stylus/threshold-committee-condition && cargo clippy --all-targets -- -D warnings",
+    "stylus:build": "cd stylus/threshold-committee-condition && cargo stylus build",
+    "stylus:check": "cd stylus/threshold-committee-condition && cargo stylus build && cargo stylus check --wasm-file target/wasm32-unknown-unknown/release/threshold_committee_condition.wasm -e https://rpc.testnet.chain.robinhood.com/rpc",
     "env:bootstrap": "node --import tsx script/manage-policies.mjs env-bootstrap",
     "flow:direct": "node --import tsx script/manage-policies.mjs flow:direct",
     "flow:uaid": "node --import tsx script/manage-policies.mjs flow:uaid",

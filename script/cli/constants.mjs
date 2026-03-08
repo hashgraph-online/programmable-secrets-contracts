@@ -81,6 +81,7 @@ export const TEMPLATE_REGISTRY = {
 };
 export const COMMAND_TREE = {
   access: ['dataset', 'policy', 'receipt-dataset', 'receipt-policy'],
+  attestations: ['threshold-config', 'threshold-runtime'],
   contracts: [],
   datasets: ['export', 'get', 'import', 'list', 'register', 'set-active'],
   doctor: [],
@@ -89,7 +90,7 @@ export const COMMAND_TREE = {
   'flow:broker': [],
   'flow:direct': [],
   'flow:uaid': [],
-  evaluators: ['get', 'list'],
+  evaluators: ['get', 'list', 'register'],
   help: [],
   identity: ['register'],
   init: [],

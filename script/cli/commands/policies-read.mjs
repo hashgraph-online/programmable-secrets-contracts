@@ -1,14 +1,19 @@
 import { getAddress, zeroAddress } from 'viem';
+import { CliError } from '../errors.mjs';
 import { CLI_RUNTIME } from '../runtime.mjs';
-import { emitResult, printField, printHeading } from '../output.mjs';
-import { parseBigIntValue, requireOption, readOption } from '../options.mjs';
+import { emitPreview, emitResult, printField, printHeading, printTransactionResult } from '../output.mjs';
+import { parseBigIntValue, requireOption, readOption, resolveMetadataHash, resolveSelectedWalletRole, shouldPreview } from '../options.mjs';
 import { POLICY_VAULT_ABI } from '../constants.mjs';
 import {
   buildPolicyVaultAddress,
+  buildExplorerUrl,
+  createTransactionResult,
+  decodeIndexedEvent,
   getBuiltInEvaluatorCatalog,
   getNetworkIdFromOptions,
   getPublicClient,
   getSelectedChain,
+  getWalletClientForRole,
   printPolicyConditions,
   printPolicySummary,
   readPolicyConditions,
@@ -174,4 +179,85 @@ export async function getEvaluatorCommand(options) {
   printField('Active', payload.active);
   printField('Registrant', payload.registrant);
   printField('Metadata', payload.metadataHash);
+}
+
+export async function registerEvaluatorCommand(options) {
+  const evaluator = getAddress(requireOption(options, ['evaluator', 'address'], 'evaluator address'));
+  const metadataHash = resolveMetadataHash(options);
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const walletClient = getWalletClientForRole({ role: resolveSelectedWalletRole(options, 'provider'), chain });
+  const policyVaultAddress = buildPolicyVaultAddress(networkId);
+  const registrationFee = await publicClient.readContract({
+    address: policyVaultAddress,
+    abi: POLICY_VAULT_ABI,
+    functionName: 'evaluatorRegistrationFee',
+  });
+  const preview = {
+    action: 'Register Policy Evaluator',
+    address: policyVaultAddress,
+    args: [evaluator, metadataHash],
+    contract: 'PolicyVault',
+    functionName: 'registerPolicyEvaluator',
+    network: chain.name,
+    nextCommand: `programmable-secret evaluators get --evaluator ${evaluator}`,
+    valueWei: registrationFee,
+    wallet: walletClient.account.address,
+  };
+  if (shouldPreview(options)) {
+    emitPreview(preview);
+    return;
+  }
+  const hash = await walletClient.writeContract({
+    account: walletClient.account,
+    address: policyVaultAddress,
+    abi: POLICY_VAULT_ABI,
+    args: [evaluator, metadataHash],
+    chain,
+    functionName: 'registerPolicyEvaluator',
+    value: registrationFee,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  let registeredEvaluator = evaluator;
+  let registrant = walletClient.account.address;
+  try {
+    const event = await decodeIndexedEvent({
+      abi: POLICY_VAULT_ABI,
+      eventName: 'PolicyEvaluatorRegistered',
+      receipt,
+    });
+    registeredEvaluator = event.args.evaluator;
+    registrant = event.args.registrant;
+  } catch (error) {
+    if (!(error instanceof CliError) || error.code !== 'EVENT_NOT_FOUND') {
+      throw error;
+    }
+    const registration = await publicClient.readContract({
+      address: policyVaultAddress,
+      abi: POLICY_VAULT_ABI,
+      functionName: 'getPolicyEvaluator',
+      args: [evaluator],
+    });
+    if (!registration.active) {
+      throw error;
+    }
+    registrant = registration.registrant;
+  }
+  printTransactionResult(
+    createTransactionResult({
+      action: 'Evaluator Registered',
+      chain,
+      contract: 'PolicyVault',
+      entityLabel: 'Evaluator',
+      entityValue: registeredEvaluator,
+      explorerUrl: buildExplorerUrl(chain, hash),
+      nextCommand: `programmable-secret evaluators get --evaluator ${registeredEvaluator}`,
+      secondaryLabel: 'Registrant',
+      secondaryValue: registrant,
+      txHash: hash,
+      valueWei: registrationFee,
+      wallet: walletClient.account.address,
+    }),
+  );
 }

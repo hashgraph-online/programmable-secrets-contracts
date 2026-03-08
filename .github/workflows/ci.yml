@@ -61,6 +61,7 @@ jobs:
           test -f abis/AddressAllowlistCondition.abi.json
           test -f abis/PaymentModule.abi.json
           test -f abis/PolicyVault.abi.json
+          test -f abis/ThresholdCommitteeCondition.abi.json
           test -f abis/TimeRangeCondition.abi.json
           test -f abis/UaidOwnershipCondition.abi.json
           test -f deployments/arbitrum-sepolia.json
@@ -91,6 +92,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run CLI tests
+        run: pnpm run test:cli
+
       - name: CLI help smoke test
         run: pnpm run help
 
@@ -101,6 +105,65 @@ jobs:
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           TARBALL="${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz"
           npx --yes "./${TARBALL}" help
+
+  stylus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stylus/threshold-committee-condition
+
+      - name: Install cargo-stylus
+        run: cargo install cargo-stylus --version 0.10.0 --locked
+
+      - name: Check formatting
+        run: pnpm run stylus:fmt
+
+      - name: Compile host-side tests
+        run: pnpm run stylus:test
+
+      - name: Run clippy
+        run: pnpm run stylus:clippy
+
+      - name: Build Stylus evaluator
+        run: pnpm run stylus:build
+
+      - name: Export Stylus ABI
+        run: |
+          cd stylus/threshold-committee-condition
+          cargo stylus export-abi > target/threshold-committee-condition.sol
+
+      - name: Upload Stylus artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylus-threshold-committee-condition
+          path: |
+            stylus/threshold-committee-condition/target/wasm32-unknown-unknown/release/threshold_committee_condition.wasm
+            stylus/threshold-committee-condition/target/threshold-committee-condition.sol
 
   subgraph:
     runs-on: ubuntu-latest

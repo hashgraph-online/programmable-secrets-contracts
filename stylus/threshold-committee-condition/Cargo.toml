@@ -1,0 +1,31 @@
+[package]
+name = "threshold-committee-condition"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "threshold_committee_condition"
+crate-type = ["lib", "cdylib"]
+
+[[bin]]
+name = "threshold-committee-condition"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dependencies]
+alloy-sol-types = { version = "1.0.1", default-features = false }
+stylus-sdk = "0.10.0"
+
+[features]
+debug = ["stylus-sdk/debug"]
+export-abi = ["stylus-sdk/export-abi"]
+stylus-test = ["stylus-sdk/stylus-test"]
+
+[lints.rust]
+unexpected_cfgs = "allow"

@@ -1,0 +1,159 @@
+name: Deploy Threshold Committee Evaluator
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Network to deploy to
+        required: true
+        default: arbitrum-sepolia
+        type: choice
+        options:
+          - arbitrum-sepolia
+          - robinhood-testnet
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-threshold-committee-${{ inputs.network }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: arbitrum-sepolia
+    env:
+      ARBITRUM_SEPOLIA_RPC_URL: ${{ secrets.ARBITRUM_SEPOLIA_RPC_URL }}
+      ROBINHOOD_TESTNET_RPC_URL: ${{ secrets.ROBINHOOD_TESTNET_RPC_URL }}
+      DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      ETH_PK: ${{ secrets.ETH_PK }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stylus/threshold-committee-condition
+
+      - name: Install cargo-stylus
+        run: cargo install cargo-stylus --version 0.10.0 --locked
+
+      - name: Resolve deploy target
+        run: |
+          case "${{ inputs.network }}" in
+            arbitrum-sepolia)
+              echo "NETWORK_NAME=arbitrum-sepolia" >> "$GITHUB_ENV"
+              echo "RPC_URL=$ARBITRUM_SEPOLIA_RPC_URL" >> "$GITHUB_ENV"
+              echo "MAX_FEE_PER_GAS_GWEI=1" >> "$GITHUB_ENV"
+              ;;
+            robinhood-testnet)
+              echo "NETWORK_NAME=robinhood-testnet" >> "$GITHUB_ENV"
+              echo "RPC_URL=$ROBINHOOD_TESTNET_RPC_URL" >> "$GITHUB_ENV"
+              echo "MAX_FEE_PER_GAS_GWEI=" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported network: ${{ inputs.network }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Validate deploy inputs
+        run: |
+          if [ -z "$RPC_URL" ]; then
+            echo "Missing RPC URL for $NETWORK_NAME" >&2
+            exit 1
+          fi
+          deployer_key="${DEPLOYER_PRIVATE_KEY:-$ETH_PK}"
+          if [ -z "$deployer_key" ]; then
+            echo "Missing DEPLOYER_PRIVATE_KEY or ETH_PK secret" >&2
+            exit 1
+          fi
+
+      - name: Normalize deployer key
+        run: |
+          deployer_key="${DEPLOYER_PRIVATE_KEY:-$ETH_PK}"
+          case "$deployer_key" in
+            0x*) normalized_key="$deployer_key" ;;
+            *) normalized_key="0x$deployer_key" ;;
+          esac
+          echo "::add-mask::$normalized_key"
+          install -m 600 /dev/null /tmp/threshold-committee-deployer.key
+          printf '%s\n' "$normalized_key" > /tmp/threshold-committee-deployer.key
+
+      - name: Verify Stylus crate
+        run: |
+          pnpm run stylus:fmt
+          pnpm run stylus:test
+          pnpm run stylus:clippy
+          pnpm run stylus:build
+
+      - name: Deploy evaluator
+        run: |
+          cd stylus/threshold-committee-condition
+          deploy_command=(
+            cargo stylus deploy
+            --endpoint "$RPC_URL"
+            --private-key-path /tmp/threshold-committee-deployer.key
+          )
+          if [ -n "$MAX_FEE_PER_GAS_GWEI" ]; then
+            deploy_command+=(--max-fee-per-gas-gwei "$MAX_FEE_PER_GAS_GWEI")
+          fi
+          "${deploy_command[@]}" | tee /tmp/threshold-committee-deploy.log
+
+      - name: Parse deployment details
+        run: |
+          deployed_address="$(sed -n 's/.*deployed code at address: .*0x\([[:xdigit:]]\{40\}\).*/0x\1/p' /tmp/threshold-committee-deploy.log | tail -n1)"
+          deployment_tx="$(sed -n 's/.*deployment tx hash: .*0x\([[:xdigit:]]\{64\}\).*/0x\1/p' /tmp/threshold-committee-deploy.log | tail -n1)"
+          activation_tx="$(sed -n 's/.*successfully activated contract .* tx .*\"\([[:xdigit:]]\{64\}\)\".*/0x\1/p' /tmp/threshold-committee-deploy.log | tail -n1)"
+          if [ -z "$deployed_address" ] || [ -z "$deployment_tx" ] || [ -z "$activation_tx" ]; then
+            echo "Failed to parse deployment output." >&2
+            exit 1
+          fi
+          {
+            echo "DEPLOYED_ADDRESS=$deployed_address"
+            echo "DEPLOYMENT_TX=$deployment_tx"
+            echo "ACTIVATION_TX=$activation_tx"
+          } >> "$GITHUB_ENV"
+
+      - name: Smoke test deployed evaluator
+        run: |
+          cast call "$DEPLOYED_ADDRESS" "version()(uint256)" --rpc-url "$RPC_URL"
+
+      - name: Summarize deployment
+        run: |
+          {
+            echo "## Threshold Committee Evaluator"
+            echo ""
+            echo "- Network: $NETWORK_NAME"
+            echo "- Address: \`$DEPLOYED_ADDRESS\`"
+            echo "- Deployment tx: \`$DEPLOYMENT_TX\`"
+            echo "- Activation tx: \`$ACTIVATION_TX\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deployment log
+        uses: actions/upload-artifact@v4
+        with:
+          name: threshold-committee-deploy-${{ inputs.network }}
+          path: /tmp/threshold-committee-deploy.log
