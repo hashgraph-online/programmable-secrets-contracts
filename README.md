@@ -21,6 +21,43 @@ This package is the contract source of truth for:
 - checked-in ABIs
 - testnet deployment manifests
 
+## Quick Navigation
+
+- Repository map: [`docs/repository-structure.md`](docs/repository-structure.md)
+- Hackathon repo map: [`docs/hackathon-repo-map.md`](docs/hackathon-repo-map.md)
+- Subgraph package: [`subgraph/README.md`](subgraph/README.md)
+- Deployments source of truth: [`deployments/`](deployments)
+- Operator CLI entrypoint: [`script/manage-policies.mjs`](script/manage-policies.mjs)
+
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/` | Solidity contracts and evaluator modules. |
+| `test/` | Foundry tests for protocol behavior, upgrades, and security invariants. |
+| `script/` | Deploy, verify, and operator CLI code. |
+| `__tests__/` | Node CLI tests that validate command behavior and serialization. |
+| `abis/` | Checked-in app-facing ABI artifacts consumed by other repos. |
+| `deployments/` | Canonical live deployment manifests for supported testnets. |
+| `subgraph/` | The Graph indexer package and Kubernetes deployment manifests. |
+| `examples/` | End-to-end sample payloads and policy templates. |
+| `stylus/` | Stylus custom evaluator implementations. |
+| `docs/` | Navigation and cross-repo integration references. |
+
+## Hackathon Repositories
+
+The hackathon build spans multiple repositories. This contracts repository is the onchain source of truth and is linked to the following components:
+
+| Repository | Role in the system |
+| --- | --- |
+| [`hashgraph-online/programmable-secrets-fe`](https://github.com/hashgraph-online/programmable-secrets-fe) | User-facing frontend for provider and buyer workflows. |
+| [`hashgraph-online/programmable-secrets-skill`](https://github.com/hashgraph-online/programmable-secrets-skill) | HCS-26 operator skill package used by agents and CLI-driven flows. |
+| [`hashgraph-online/registry-broker`](https://github.com/hashgraph-online/registry-broker) | Broker integration used by `flow:broker` and UAID-linked agent workflows. |
+| [`hashgraph-online/points-portal`](https://github.com/hashgraph-online/points-portal) | Portal integration surface consuming contract and subgraph outputs. |
+| [`erc-8004/erc-8004-contracts`](https://github.com/erc-8004/erc-8004-contracts) | Upstream ERC-8004 registry contracts used for identity-gated policy checks. |
+
+For a full integration matrix and ownership boundaries, see [`docs/hackathon-repo-map.md`](docs/hackathon-repo-map.md).
+
 ## Architecture
 
 | Contract | Responsibility |

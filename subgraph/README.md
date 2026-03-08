@@ -13,6 +13,12 @@ Manifests are generated directly from checked-in deployment manifests:
 - `../deployments/robinhood-testnet.json`
 - `../deployments/arbitrum-sepolia.json`
 
+## Related docs
+
+- Protocol overview: [`../README.md`](../README.md)
+- Repository structure: [`../docs/repository-structure.md`](../docs/repository-structure.md)
+- Hackathon repo map: [`../docs/hackathon-repo-map.md`](../docs/hackathon-repo-map.md)
+
 ## Prerequisites
 
 - Node `>=20`
