@@ -63,7 +63,6 @@
     "policies:update-prices": "node --import tsx script/manage-policies.mjs update-prices"
   },
   "dependencies": {
-    "@hashgraphonline/standards-sdk": "0.1.165",
     "dotenv": "^16.6.1",
     "tsx": "^4.20.6",
     "viem": "^2.39.3"

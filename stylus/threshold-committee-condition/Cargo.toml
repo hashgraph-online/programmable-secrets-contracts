@@ -27,5 +27,8 @@ debug = ["stylus-sdk/debug"]
 export-abi = ["stylus-sdk/export-abi"]
 stylus-test = ["stylus-sdk/stylus-test"]
 
+[patch.crates-io]
+stylus-sdk = { path = "../../vendor/stylus-sdk" }
+
 [lints.rust]
 unexpected_cfgs = "allow"

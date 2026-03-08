@@ -23,5 +23,14 @@
   "devDependencies": {
     "@graphprotocol/graph-cli": "0.98.1",
     "typescript": "5.9.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "gluegun": "5.2.2",
+      "glob": "11.1.0",
+      "immutable": "5.1.5",
+      "js-yaml": "4.1.1",
+      "undici": "7.18.2"
+    }
   }
 }
