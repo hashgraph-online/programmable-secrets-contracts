@@ -298,14 +298,6 @@ pub trait GlobalStorage {
         debug_assert!(B.is_multiple_of(8));
         debug_assert!(B / 8 + offset <= 32);
 
-        if B == 256 {
-            return Self::set_word(
-                host,
-                key,
-                FixedBytes::from_slice(&value.to_be_bytes::<32>()),
-            );
-        }
-
         let mut word = Self::get_word(host.clone(), key);
 
         let value = value.to_be_bytes_vec();
