@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseAbi } from 'viem';
+import { EXAMPLE_PROVIDER_UAID } from './provider-uaid.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +39,7 @@ export const TEMPLATE_REGISTRY = {
     kind: 'dataset-policy-template',
     payload: {
       dataset: {
-        providerUaid: 'did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab',
+        providerUaid: EXAMPLE_PROVIDER_UAID,
         metadata: {
           title: 'TSLA volatility surface',
           category: 'premium-market-data',

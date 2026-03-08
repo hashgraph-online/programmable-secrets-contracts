@@ -2,9 +2,11 @@ import { Buffer } from 'node:buffer';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { keccak256, getAddress } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { ACCESS_RECEIPT_ABI, CLI_COMMAND, PAYMENT_MODULE_ABI, POLICY_VAULT_ABI } from '../constants.mjs';
 import { CliError } from '../errors.mjs';
 import { decryptPayload, encryptPayload, parseHexBuffer, sha256Hex, toHexString } from '../crypto.mjs';
+import { normalizePrivateKey, resolveEnvValue, resolvePreferredEnvValue } from '../env.mjs';
 import { CLI_RUNTIME } from '../runtime.mjs';
 import { emitResult, printSuccess, serializeJson } from '../output.mjs';
 import { buildHashFromText, parseBigIntValue, readOption, requireOption, resolveOutputPath } from '../options.mjs';
@@ -20,6 +22,7 @@ import {
   serializePolicy,
   serializeReceipt,
 } from '../index-support.mjs';
+import { buildWalletBackedUaid, normalizeProviderUaid } from '../provider-uaid.mjs';
 
 function resolvePlaintextBuffer(options) {
   const plaintext = readOption(options, ['plaintext'], null);
@@ -33,12 +36,43 @@ function resolvePlaintextBuffer(options) {
   throw new CliError('MISSING_PLAINTEXT', 'Missing plaintext payload.', `Provide --plaintext or --plaintext-file, or rerun ${CLI_COMMAND} krs encrypt with --interactive.`);
 }
 
+function resolveBundleProviderUaid(options) {
+  const explicitProviderUaid = normalizeProviderUaid(readOption(options, ['provider-uaid'], ''), {
+    fieldName: 'provider UAID',
+  });
+  if (explicitProviderUaid) {
+    return explicitProviderUaid;
+  }
+  const configuredProviderUaid = resolvePreferredEnvValue(
+    'PROGRAMMABLE_SECRETS_PROVIDER_UAID',
+    ['DEMO_PROVIDER_UAID'],
+    '',
+  ).value;
+  const normalizedConfiguredProviderUaid = normalizeProviderUaid(configuredProviderUaid, {
+    fieldName: 'configured provider UAID',
+  });
+  if (normalizedConfiguredProviderUaid) {
+    return normalizedConfiguredProviderUaid;
+  }
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const providerPrivateKey = resolveEnvValue('ETH_PK_2').value;
+  if (providerPrivateKey) {
+    const account = privateKeyToAccount(normalizePrivateKey(providerPrivateKey, 'ETH_PK_2'));
+    return buildWalletBackedUaid({
+      chainId: chain.id,
+      walletAddress: account.address,
+    });
+  }
+  return buildWalletBackedUaid({ chainId: chain.id });
+}
+
 function buildBundlePayload(options) {
   const plaintextBuffer = resolvePlaintextBuffer(options);
   const encryptedPayload = encryptPayload(plaintextBuffer);
   const title = readOption(options, ['title'], 'Programmable Secrets bundle');
   const metadataJson = readOption(options, ['metadata-json'], JSON.stringify({ title }));
-  const providerUaid = readOption(options, ['provider-uaid'], 'did:uaid:hol:provider');
+  const providerUaid = resolveBundleProviderUaid(options);
   return {
     bundle: {
       contentKeyHex: toHexString(encryptedPayload.contentKey),

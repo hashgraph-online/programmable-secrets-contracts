@@ -67,7 +67,7 @@ For a full integration matrix and ownership boundaries, see [`docs/hackathon-rep
 | `UaidOwnershipCondition` | Built-in policy evaluator that enforces ERC-8004 wallet ownership plus exact buyer UAID match. |
 | `AddressAllowlistCondition` | Built-in policy evaluator that enforces a provider-supplied wallet allowlist. |
 | `ThresholdCommitteeCondition` | Example Stylus evaluator that verifies a quorum of committee attestations before purchase. |
-| external `IdentityRegistry` | ERC-8004 registry address referenced by `UaidOwnershipCondition` to prove wallet ownership of a target HCS-14 UAID-native agent onchain. |
+| external `IdentityRegistry` | ERC-8004 registry address referenced by `UaidOwnershipCondition` to prove wallet ownership of a target [HCS-14](https://github.com/hiero-ledger/hiero-consensus-specifications/blob/675f6d06450c72c63f52191eb090e7b2bdbb405c/docs/standards/hcs-14.md) UAID-native agent onchain. |
 
 The intended app entrypoints are:
 - dataset registration and policy creation through `PolicyVault`
@@ -246,7 +246,7 @@ cast send $POLICY_VAULT \
 programmable-secret krs encrypt \
   --plaintext-file ./examples/two-agent-sale/agent-a-signal.json \
   --title "ETH balance gated signal" \
-  --provider-uaid did:uaid:hol:balance-provider \
+  --provider-uaid "uaid:did:pkh:eip155:46630:0x1111111111111111111111111111111111111111;nativeId=eip155:46630:0x1111111111111111111111111111111111111111" \
   --output ./examples/custom-evaluators/eth-balance-bundle.json
 
 programmable-secret datasets register \
@@ -346,7 +346,7 @@ programmable-secret evaluators register \
 programmable-secret krs encrypt \
   --plaintext-file ./examples/two-agent-sale/agent-a-signal.json \
   --title "Threshold committee signal" \
-  --provider-uaid did:uaid:hol:committee-provider \
+  --provider-uaid "uaid:did:pkh:eip155:46630:0x1111111111111111111111111111111111111111;nativeId=eip155:46630:0x1111111111111111111111111111111111111111" \
   --output ./examples/custom-evaluators/threshold-committee-bundle.json
 
 programmable-secret datasets register \
@@ -662,7 +662,7 @@ Write commands:
 
 ```bash
 programmable-secret identity register --agent-uri https://hol.org/agents/volatility-trading-agent-custodian
-programmable-secret datasets register --provider-uaid "did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab" --metadata-json '{"title":"TSLA feed"}' --ciphertext "encrypted payload" --key-material "wrapped key"
+programmable-secret datasets register --provider-uaid "uaid:did:pkh:eip155:46630:0x1111111111111111111111111111111111111111;nativeId=eip155:46630:0x1111111111111111111111111111111111111111" --metadata-json '{"title":"TSLA feed"}' --ciphertext "encrypted payload" --key-material "wrapped key"
 programmable-secret datasets import --file dataset-1.json
 programmable-secret datasets set-active --dataset-id 1 --active false
 programmable-secret policies create-timebound --dataset-id 1 --price-eth 0.00001 --duration-hours 24 --metadata-json '{"title":"24 hour access"}'

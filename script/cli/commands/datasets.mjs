@@ -30,13 +30,16 @@ import {
 import { CLI_RUNTIME } from '../runtime.mjs';
 import { maybeWriteJsonFile, readJsonFile } from '../chain.mjs';
 import { normalizeHash } from '../options.mjs';
+import { normalizeProviderUaid } from '../provider-uaid.mjs';
 
 async function resolveProviderUaidFromBroker(options, {
   allowRegistration,
   networkId,
   walletRole,
 }) {
-  const explicitProviderUaid = readOption(options, ['provider-uaid'], null);
+  const explicitProviderUaid = normalizeProviderUaid(readOption(options, ['provider-uaid'], ''), {
+    fieldName: 'provider UAID',
+  });
   if (explicitProviderUaid) {
     return explicitProviderUaid;
   }
@@ -65,7 +68,7 @@ async function resolveProviderUaidFromBroker(options, {
     walletRole,
   });
   if (existingIdentity?.uaid) {
-    return existingIdentity.uaid;
+    return normalizeProviderUaid(existingIdentity.uaid, { fieldName: 'broker provider UAID' });
   }
   const shouldRegister = parseBooleanOption(
     readOption(
@@ -93,7 +96,7 @@ async function resolveProviderUaidFromBroker(options, {
     walletRole,
   });
   try {
-    return registration.brokerUaid;
+    return normalizeProviderUaid(registration.brokerUaid, { fieldName: 'registered provider UAID' });
   } finally {
     await registration.localAgentHandle.stop();
   }

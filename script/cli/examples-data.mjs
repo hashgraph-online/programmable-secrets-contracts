@@ -1,4 +1,5 @@
 import { CLI_COMMAND } from './constants.mjs';
+import { EXAMPLE_PROVIDER_UAID } from './provider-uaid.mjs';
 
 export const EXAMPLE_REGISTRY = {
   'two-agent-sale': {
@@ -17,7 +18,7 @@ export const EXAMPLE_REGISTRY = {
       {
         title: 'Agent A encrypts the payload bundle locally',
         commands: [
-          `${CLI_COMMAND} krs encrypt --plaintext-file ./examples/two-agent-sale/agent-a-signal.json --title "Agent A premium signal" --provider-uaid did:uaid:hol:agent-a --output ./examples/two-agent-sale/agent-a-bundle.json`,
+          `${CLI_COMMAND} krs encrypt --plaintext-file ./examples/two-agent-sale/agent-a-signal.json --title "Agent A premium signal" --provider-uaid "${EXAMPLE_PROVIDER_UAID}" --output ./examples/two-agent-sale/agent-a-bundle.json`,
         ],
       },
       {
@@ -76,7 +77,7 @@ export const EXAMPLE_REGISTRY = {
       {
         title: 'Create the encrypted dataset bundle and register the dataset',
         commands: [
-          `${CLI_COMMAND} krs encrypt --plaintext-file ./examples/two-agent-sale/agent-a-signal.json --title "ETH balance gated signal" --provider-uaid did:uaid:hol:balance-provider --output ./examples/custom-evaluators/eth-balance-bundle.json`,
+          `${CLI_COMMAND} krs encrypt --plaintext-file ./examples/two-agent-sale/agent-a-signal.json --title "ETH balance gated signal" --provider-uaid "${EXAMPLE_PROVIDER_UAID}" --output ./examples/custom-evaluators/eth-balance-bundle.json`,
           `${CLI_COMMAND} datasets register --wallet provider --bundle-file ./examples/custom-evaluators/eth-balance-bundle.json`,
         ],
       },
@@ -132,7 +133,7 @@ export const EXAMPLE_REGISTRY = {
       {
         title: 'Encrypt the payload bundle and register the dataset',
         commands: [
-          `${CLI_COMMAND} krs encrypt --plaintext-file ./examples/two-agent-sale/agent-a-signal.json --title "Threshold committee signal" --provider-uaid did:uaid:hol:committee-provider --output ./examples/custom-evaluators/threshold-committee-bundle.json`,
+          `${CLI_COMMAND} krs encrypt --plaintext-file ./examples/two-agent-sale/agent-a-signal.json --title "Threshold committee signal" --provider-uaid "${EXAMPLE_PROVIDER_UAID}" --output ./examples/custom-evaluators/threshold-committee-bundle.json`,
           `${CLI_COMMAND} datasets register --network arbitrum-sepolia --wallet provider --bundle-file ./examples/custom-evaluators/threshold-committee-bundle.json`,
         ],
       },

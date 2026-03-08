@@ -127,6 +127,42 @@ test('buildWalletBackedProviderUaid derives a deterministic wallet-backed UAID',
   assert.match(uaid.toLowerCase(), /0x8ba1f109551bd432803012645ac136ddd64dba72/);
 });
 
+test('krs encrypt derives a wallet-backed provider UAID from ETH_PK_2', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', 'script/manage-policies.mjs', 'krs', 'encrypt', '--plaintext', 'hello world', '--json'],
+    {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ETH_PK_2: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        PROGRAMMABLE_SECRETS_NETWORK: 'robinhood-testnet',
+      },
+    },
+  );
+
+  const payload = parseJsonOutput(result);
+  assert.equal(payload.kind, 'krs-encrypt');
+  assert.match(payload.payload.bundle.providerUaid, /^uaid:/);
+  assert.match(payload.payload.bundle.providerUaid, /eip155:46630:/);
+  assert.doesNotMatch(payload.payload.bundle.providerUaid, /^did:uaid:/);
+});
+
+test('krs encrypt rejects invalid legacy did:uaid provider identifiers', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', 'script/manage-policies.mjs', 'krs', 'encrypt', '--plaintext', 'hello world', '--provider-uaid', 'did:uaid:hol:provider'],
+    {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf8',
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr || result.stdout, /INVALID_PROVIDER_UAID/);
+});
+
 test('.env.example defaults the broker to production hol.org', () => {
   const envExample = readFileSync(resolve(PROJECT_ROOT, '.env.example'), 'utf8');
 

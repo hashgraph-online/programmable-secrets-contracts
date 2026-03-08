@@ -10,9 +10,12 @@ import {
   DEFAULT_REGISTRY_BROKER_BASE_URL,
   DOCKER_ENV_ALIASES,
   ENV_PATH_CANDIDATES,
+  NETWORK_ALIASES,
+  SUPPORTED_NETWORKS,
 } from './constants.mjs';
 import { CliError } from './errors.mjs';
 import { printInfo, printSuccess, printWarning } from './output.mjs';
+import { EXAMPLE_PROVIDER_UAID, buildWalletBackedUaid } from './provider-uaid.mjs';
 
 const RUNTIME_ENV_CACHE = new Map();
 
@@ -129,10 +132,19 @@ export function normalizePrivateKey(value, label) {
 function buildBootstrapEnvMap() {
   const agentKey = resolveEnvValue('ETH_PK').value;
   const providerKey = resolveEnvValue('ETH_PK_2').value;
+  const programmableSecretsNetwork = resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_NETWORK', ['DEMO_ERC8004_NETWORK'], DEFAULT_NETWORK_ID).value;
+  const normalizedNetworkId = NETWORK_ALIASES[programmableSecretsNetwork] || programmableSecretsNetwork;
+  const providerChainId = SUPPORTED_NETWORKS[normalizedNetworkId]?.id ?? SUPPORTED_NETWORKS[DEFAULT_NETWORK_ID].id;
   const brokerAccountId = resolveEnvValue(
     'REGISTRY_BROKER_ACCOUNT_ID',
     agentKey ? privateKeyToAccount(normalizePrivateKey(agentKey, 'ETH_PK')).address : '0xYOUR_AGENT_WALLET_ADDRESS',
   ).value;
+  const defaultProviderUaid = providerKey
+    ? buildWalletBackedUaid({
+        chainId: providerChainId,
+        walletAddress: privateKeyToAccount(normalizePrivateKey(providerKey, 'ETH_PK_2')).address,
+      })
+    : EXAMPLE_PROVIDER_UAID;
   return {
     ETH_PK: agentKey || '0xYOUR_AGENT_WALLET_PRIVATE_KEY',
     ETH_PK_2: providerKey || '0xYOUR_PROVIDER_WALLET_PRIVATE_KEY',
@@ -140,7 +152,7 @@ function buildBootstrapEnvMap() {
     REGISTRY_BROKER_API_KEY: resolveEnvValue('REGISTRY_BROKER_API_KEY', DEFAULT_REGISTRY_BROKER_API_KEY).value,
     REGISTRY_BROKER_ACCOUNT_ID: brokerAccountId,
     REGISTRY_BROKER_ERC8004_NETWORK: resolveEnvValue('REGISTRY_BROKER_ERC8004_NETWORK', `erc-8004:${DEFAULT_NETWORK_ID}`).value,
-    PROGRAMMABLE_SECRETS_NETWORK: resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_NETWORK', ['DEMO_ERC8004_NETWORK'], DEFAULT_NETWORK_ID).value,
+    PROGRAMMABLE_SECRETS_NETWORK: programmableSecretsNetwork,
     PROGRAMMABLE_SECRETS_AGENT_URI: resolvePreferredEnvValue(
       'PROGRAMMABLE_SECRETS_AGENT_URI',
       ['DEMO_AGENT_URI'],
@@ -149,7 +161,7 @@ function buildBootstrapEnvMap() {
     PROGRAMMABLE_SECRETS_PROVIDER_UAID: resolvePreferredEnvValue(
       'PROGRAMMABLE_SECRETS_PROVIDER_UAID',
       ['DEMO_PROVIDER_UAID'],
-      'did:uaid:hol:quantlab?uid=quantlab&registry=hol&proto=hol&nativeId=quantlab',
+      defaultProviderUaid,
     ).value,
     PROGRAMMABLE_SECRETS_PRICE_WEI: resolvePreferredEnvValue('PROGRAMMABLE_SECRETS_PRICE_WEI', ['DEMO_PRICE_WEI'], '10000000000000').value,
   };

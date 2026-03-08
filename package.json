@@ -1,6 +1,6 @@
 {
   "name": "programmable-secret",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Operator CLI for dataset-backed programmable access policies on Robinhood Chain and Arbitrum Sepolia.",
   "license": "MIT",
   "type": "module",

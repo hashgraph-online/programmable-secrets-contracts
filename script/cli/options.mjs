@@ -173,7 +173,7 @@ export function resolveDatasetRegistrationHashes(options, providerUaidFallback =
       description: 'provider UAID hash',
       hashOptionNames: ['provider-uaid-hash'],
       valueOptionNames: ['provider-uaid'],
-      example: '--provider-uaid-hash 0x... or --provider-uaid did:uaid:...',
+      example: '--provider-uaid-hash 0x... or --provider-uaid uaid:did:pkh:eip155:46630:0x1111111111111111111111111111111111111111;nativeId=eip155:46630:0x1111111111111111111111111111111111111111',
       fallback: providerUaidFallback ? buildHashFromText(providerUaidFallback) : undefined,
     }),
   };
