@@ -6,9 +6,9 @@ dataSources:
     name: PolicyVault
     network: arbitrum-sepolia
     source:
-      address: "0x76160A8F1bFEd994749318Bee9611A51bcDA80e8"
+      address: "0x600b2326537f74E7d0fD4A6e59B00FA6E6b63536"
       abi: PolicyVault
-      startBlock: 247926205
+      startBlock: 247980464
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -26,7 +26,7 @@ dataSources:
           handler: handleDatasetRegistered
         - event: DatasetStatusUpdated(indexed uint256,bool)
           handler: handleDatasetStatusUpdated
-        - event: PolicyCreated(indexed uint256,indexed uint256,indexed address,address,address,uint256,bytes32,uint32,bytes32,bytes32)
+        - event: PolicyCreated(indexed uint256,indexed uint256,indexed address,address,address,uint256,bool,bytes32,uint32,bytes32,bytes32)
           handler: handlePolicyCreated
         - event: PolicyUpdated(indexed uint256,indexed uint256,uint256,bool,bytes32)
           handler: handlePolicyUpdated
@@ -44,9 +44,9 @@ dataSources:
     name: PaymentModule
     network: arbitrum-sepolia
     source:
-      address: "0xE39Ae07F6226156d97C76B4ec6ac8697890Dd350"
+      address: "0x7F17cB0Ec2e8981A6489Ec1281C55474e575a66D"
       abi: PaymentModule
-      startBlock: 247926205
+      startBlock: 247980464
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -61,7 +61,7 @@ dataSources:
         - name: PaymentModule
           file: ../abis/PaymentModule.abi.json
       eventHandlers:
-        - event: AccessGranted(indexed uint256,indexed uint256,indexed uint256,address,address,address,uint256,uint64,bytes32,bytes32)
+        - event: AccessGranted(indexed uint256,indexed uint256,indexed uint256,address,address,address,uint256,uint64,bool,bytes32,bytes32)
           handler: handleAccessGranted
         - event: PolicyVaultUpdated(indexed address)
           handler: handlePolicyVaultUpdated
@@ -73,9 +73,9 @@ dataSources:
     name: AccessReceipt
     network: arbitrum-sepolia
     source:
-      address: "0x2032c2572838b4B746072e8e542BDEE324BEA0C8"
+      address: "0x157Ec116169815ab15079dC117854fe19f96d51c"
       abi: AccessReceipt
-      startBlock: 247926205
+      startBlock: 247980464
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -89,8 +89,10 @@ dataSources:
         - name: AccessReceipt
           file: ../abis/AccessReceipt.abi.json
       eventHandlers:
-        - event: ReceiptMinted(indexed uint256,indexed uint256,indexed uint256,address,address,address,uint256,uint64,bytes32,bytes32)
+        - event: ReceiptMinted(indexed uint256,indexed uint256,indexed uint256,address,address,address,uint256,uint64,bool,bytes32,bytes32)
           handler: handleReceiptMinted
         - event: PaymentModuleUpdated(indexed address)
           handler: handlePaymentModuleUpdated
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleTransfer
       file: ./src/access-receipt.ts
