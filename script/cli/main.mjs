@@ -7,7 +7,7 @@ import { emitJson } from './output.mjs';
 import { initializeRuntime, CLI_RUNTIME } from './runtime.mjs';
 import { runInitCommand, runProfilesCommand, runTemplatesCommand, runCompletionsCommand, runStart, runDoctor, showContracts } from './commands/system.mjs';
 import { runExamplesCommand } from './commands/examples.mjs';
-import { thresholdConfigCommand, thresholdRuntimeCommand } from './commands/attestations.mjs';
+import { thresholdCheckCommand, thresholdConfigCommand, thresholdRuntimeCommand } from './commands/attestations.mjs';
 import { listPoliciesLegacyCommand, deactivateAllCommand, updatePricesCommand } from './commands/admin.mjs';
 import { listDatasetsCommand, getDatasetCommand, exportDatasetCommand, importDatasetCommand, registerDatasetCommand, setDatasetActiveCommand } from './commands/datasets.mjs';
 import { listPoliciesCommand, getPolicyCommand, listEvaluatorsCommand, getEvaluatorCommand, registerEvaluatorCommand } from './commands/policies-read.mjs';
@@ -15,6 +15,22 @@ import { createTimeboundPolicyCommand, createUaidPolicyCommand, exportPolicyComm
 import { purchasePolicyCommand, accessPolicyCommand, accessDatasetCommand, receiptByPolicyCommand, receiptByDatasetCommand, getReceiptCommand, registerIdentityCommand } from './commands/access.mjs';
 import { encryptBundleCommand, decryptBundleCommand, verifyBundleCommand } from './commands/krs.mjs';
 import { runDirectMarketplaceFlow, runDirectUaidFlow, demoBrokerUaidFlow } from './commands/flows.mjs';
+
+function normalizeInvocationArgs(rawArgs) {
+  const args = rawArgs.filter((value) => value !== '--');
+  const helpFlagIndex = args.findIndex((value) => value === '--help' || value === '-h');
+  if (helpFlagIndex === -1) {
+    return args;
+  }
+  const filteredArgs = args.filter((value) => value !== '--help' && value !== '-h');
+  if (filteredArgs[0] === 'help') {
+    return filteredArgs;
+  }
+  if (helpFlagIndex === 0) {
+    return ['help', ...filteredArgs];
+  }
+  return ['help', filteredArgs[0]];
+}
 
 async function runDatasetsCommand(tokens) {
   const { positionals, options } = parseCliArgs(tokens);
@@ -95,6 +111,7 @@ async function runAttestationsCommand(tokens) {
   const { positionals, options } = parseCliArgs(tokens);
   const subcommand = positionals[0] || 'threshold-config';
   switch (subcommand) {
+    case 'threshold-check': return thresholdCheckCommand(options);
     case 'threshold-config': return thresholdConfigCommand(options);
     case 'threshold-runtime': return thresholdRuntimeCommand(options);
     default: throw new CliError('UNKNOWN_SUBCOMMAND', `Unknown attestations command "${subcommand}".`, `See "${CLI_COMMAND} help attestations".`);
@@ -151,10 +168,11 @@ async function dispatchCommand(commandName, tokens, forcePreview = false) {
   }
 }
 
-export async function runCli(rawArgs = process.argv.slice(2).filter((value) => value !== '--')) {
-  const command = rawArgs[0] || 'start';
-  const commandArgs = rawArgs.slice(1);
-  const globalOptions = parseCliArgs(rawArgs).options;
+export async function runCli(rawArgs = process.argv.slice(2)) {
+  const normalizedArgs = normalizeInvocationArgs(rawArgs);
+  const command = normalizedArgs[0] || 'start';
+  const commandArgs = normalizedArgs.slice(1);
+  const globalOptions = parseCliArgs(normalizedArgs).options;
   initializeRuntime({
     commandName: command,
     globalOptions,

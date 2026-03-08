@@ -81,7 +81,7 @@ export const TEMPLATE_REGISTRY = {
 };
 export const COMMAND_TREE = {
   access: ['dataset', 'policy', 'receipt-dataset', 'receipt-policy'],
-  attestations: ['threshold-config', 'threshold-runtime'],
+  attestations: ['threshold-check', 'threshold-config', 'threshold-runtime'],
   contracts: [],
   datasets: ['export', 'get', 'import', 'list', 'register', 'set-active'],
   doctor: [],
@@ -181,4 +181,10 @@ export const IDENTITY_REGISTRY_ABI = parseAbi([
   'function register(string agentURI) returns (uint256 agentId)',
   'function ownerOf(uint256 tokenId) view returns (address)',
   'event Registered(uint256 indexed agentId,string agentURI,address indexed owner)',
+]);
+
+export const THRESHOLD_COMMITTEE_CONDITION_ABI = parseAbi([
+  'function version() view returns (uint256)',
+  'function validateCondition(address policyVault,address provider,uint256 datasetId,bytes configData)',
+  'function isPurchaseAllowed(address policyVault,uint256 policyId,address buyer,address recipient,bytes configData,bytes runtimeData) view returns (bool)',
 ]);

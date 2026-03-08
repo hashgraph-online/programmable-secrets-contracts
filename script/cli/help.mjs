@@ -3,11 +3,22 @@ import { EXAMPLE_REGISTRY } from './examples-data.mjs';
 import { emitResult, printCommandUsage, printHeading, printWarning } from './output.mjs';
 import { CLI_RUNTIME } from './runtime.mjs';
 
-function showCommandTopic(topic) {
+function showGenericCommandTopic(topic) {
+  const subcommands = COMMAND_TREE[topic] || [];
   if (CLI_RUNTIME.json) {
-    emitResult('help-topic', { command: topic, subcommands: COMMAND_TREE[topic] || [] });
-    return;
+    emitResult('help-topic', { command: topic, subcommands });
+    return true;
   }
+  printHeading(topic);
+  console.log(`Usage: ${CLI_COMMAND} ${topic}${subcommands.length > 0 ? ' <subcommand>' : ''}`);
+  if (subcommands.length > 0) {
+    console.log('');
+    console.log(`Subcommands: ${subcommands.join(', ')}`);
+  }
+  return true;
+}
+
+function showCommandTopic(topic) {
   switch (topic) {
     case 'datasets':
       printHeading('datasets');
@@ -39,6 +50,7 @@ function showCommandTopic(topic) {
       printCommandUsage([
         `Build threshold committee config: ${CLI_COMMAND} attestations threshold-config --policy-context-text "committee-release-v1" --max-duration-minutes 60 --threshold 2 --committee 0xSigner1,0xSigner2,0xSigner3`,
         `Build threshold committee runtime: ${CLI_COMMAND} attestations threshold-runtime --policy-id 1 --buyer 0xBuyer --evaluator 0xEvaluator --policy-context-text "committee-release-v1" --duration-minutes 15 --committee-private-keys-file ./committee-signers.local.json`,
+        `Call the deployed evaluator directly: ${CLI_COMMAND} attestations threshold-check --network arbitrum-sepolia --policy-id 1 --buyer 0xBuyer --evaluator 0xEvaluator --config-file /tmp/threshold-committee-config.json --runtime-file /tmp/threshold-committee-runtime.json`,
       ]);
       return;
     case 'examples':
@@ -59,6 +71,10 @@ function showCommandTopic(topic) {
       ]);
       return;
     default:
+      if (COMMAND_TREE[topic]) {
+        showGenericCommandTopic(topic);
+        return;
+      }
       printWarning(`Unknown help topic: ${topic}`);
   }
 }

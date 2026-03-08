@@ -30,6 +30,26 @@ test('help exposes the examples command family', () => {
   assert.match(result.stdout, /\battestations\b/);
 });
 
+test('global --help prints top-level help', () => {
+  const result = runCli(['--help']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Programmable Secrets CLI/);
+  assert.match(result.stdout, /\bflow:direct\b/);
+});
+
+test('command --help prints topic help', () => {
+  const result = runCli(['policies', '--help']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /=== policies ===/);
+  assert.match(result.stdout, /\bcreate-timebound\b/);
+});
+
+test('attestations help exposes the direct threshold evaluator check', () => {
+  const result = runCli(['help', 'attestations']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\bthreshold-check\b/);
+});
+
 test('examples list exposes the two-agent sale flow', () => {
   const result = runCli(['examples', 'list', '--json']);
   const payload = parseJsonOutput(result);

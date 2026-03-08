@@ -1,4 +1,5 @@
 import { getAddress } from 'viem';
+import { POLICY_VAULT_ABI, THRESHOLD_COMMITTEE_CONDITION_ABI } from '../constants.mjs';
 import { CliError } from '../errors.mjs';
 import { CLI_RUNTIME } from '../runtime.mjs';
 import { emitResult, printField, printHeading, printSuccess, serializeJson } from '../output.mjs';
@@ -15,6 +16,7 @@ import {
   getPublicClient,
   getSelectedChain,
   maybeWriteJsonFile,
+  readJsonFile,
   readPolicyConditions,
 } from '../index-support.mjs';
 import {
@@ -78,6 +80,27 @@ function buildThresholdConfigPayload(options) {
   });
 }
 
+function resolveHexPayload({ options, directOption, fileOption, fieldName, description }) {
+  const directValue = readOption(options, [directOption], null);
+  if (directValue !== null) {
+    return `${directValue}`.trim();
+  }
+  const filePath = readOption(options, [fileOption], null);
+  if (filePath === null) {
+    return null;
+  }
+  const payload = readJsonFile(filePath, description);
+  const resolvedValue = payload?.[fieldName];
+  if (typeof resolvedValue === 'string' && resolvedValue.trim().length > 0) {
+    return resolvedValue.trim();
+  }
+  throw new CliError(
+    'INVALID_THRESHOLD_PAYLOAD',
+    `Unable to resolve ${fieldName} from ${filePath}.`,
+    `Expected ${filePath} to contain a JSON object with a ${fieldName} field.`,
+  );
+}
+
 async function resolveRuntimePlacement({ evaluator, networkId, policyId, publicClient, options }) {
   const conditionCount = readOption(options, ['condition-count'], null);
   const conditionIndex = readOption(options, ['condition-index'], null);
@@ -115,31 +138,7 @@ async function resolveRuntimePlacement({ evaluator, networkId, policyId, publicC
   };
 }
 
-export async function thresholdConfigCommand(options) {
-  const payload = buildThresholdConfigPayload(options);
-  const outputPath = resolveOutputPath(options);
-  if (outputPath) {
-    const writtenPath = maybeWriteJsonFile(outputPath, payload, serializeJson);
-    if (CLI_RUNTIME.json) {
-      emitResult('threshold-committee-config', { outputPath: writtenPath, ...payload });
-      return;
-    }
-    printSuccess(`Wrote threshold committee config to ${writtenPath}`);
-    return;
-  }
-  if (CLI_RUNTIME.json) {
-    emitResult('threshold-committee-config', payload);
-    return;
-  }
-  printHeading('Threshold Committee Config');
-  printField('Threshold', payload.threshold);
-  printField('Committee', payload.committee.join(','));
-  printField('Max deadline', payload.maxDeadline);
-  printField('Policy context', payload.policyContextHash);
-  printField('Config data', payload.configData);
-}
-
-export async function thresholdRuntimeCommand(options) {
+async function buildThresholdRuntimePayload(options) {
   const policyId = parseBigIntValue(requireOption(options, ['policy-id'], 'policy id'), 'policy-id');
   const buyer = getAddress(requireOption(options, ['buyer'], 'buyer address'));
   const evaluator = getAddress(requireOption(options, ['evaluator'], 'evaluator address'));
@@ -177,11 +176,39 @@ export async function thresholdRuntimeCommand(options) {
     policyVault,
     recipient,
   });
-  const enrichedPayload = {
+  return {
     ...payload,
     network: chain.name,
     placementSource: placement.source,
   };
+}
+
+export async function thresholdConfigCommand(options) {
+  const payload = buildThresholdConfigPayload(options);
+  const outputPath = resolveOutputPath(options);
+  if (outputPath) {
+    const writtenPath = maybeWriteJsonFile(outputPath, payload, serializeJson);
+    if (CLI_RUNTIME.json) {
+      emitResult('threshold-committee-config', { outputPath: writtenPath, ...payload });
+      return;
+    }
+    printSuccess(`Wrote threshold committee config to ${writtenPath}`);
+    return;
+  }
+  if (CLI_RUNTIME.json) {
+    emitResult('threshold-committee-config', payload);
+    return;
+  }
+  printHeading('Threshold Committee Config');
+  printField('Threshold', payload.threshold);
+  printField('Committee', payload.committee.join(','));
+  printField('Max deadline', payload.maxDeadline);
+  printField('Policy context', payload.policyContextHash);
+  printField('Config data', payload.configData);
+}
+
+export async function thresholdRuntimeCommand(options) {
+  const enrichedPayload = await buildThresholdRuntimePayload(options);
   const outputPath = resolveOutputPath(options);
   if (outputPath) {
     const writtenPath = maybeWriteJsonFile(outputPath, enrichedPayload, serializeJson);
@@ -209,4 +236,105 @@ export async function thresholdRuntimeCommand(options) {
   printField('Message hash', enrichedPayload.messageHash);
   printField('Eth signed hash', enrichedPayload.ethSignedMessageHash);
   printField('Runtime data', enrichedPayload.runtimeData);
+}
+
+export async function thresholdCheckCommand(options) {
+  const policyId = parseBigIntValue(requireOption(options, ['policy-id'], 'policy id'), 'policy-id');
+  const buyer = getAddress(requireOption(options, ['buyer'], 'buyer address'));
+  const evaluator = getAddress(requireOption(options, ['evaluator'], 'evaluator address'));
+  const networkId = getNetworkIdFromOptions(options);
+  const chain = getSelectedChain(networkId);
+  const publicClient = getPublicClient(chain);
+  const recipient = getAddress(readOption(options, ['recipient'], buyer));
+  const policyVault = getAddress(readOption(options, ['policy-vault'], buildPolicyVaultAddress(networkId)));
+  const configData =
+    resolveHexPayload({
+      description: 'threshold committee config payload',
+      directOption: 'config-data',
+      fieldName: 'configData',
+      fileOption: 'config-file',
+      options,
+    }) ?? buildThresholdConfigPayload(options).configData;
+  const runtimeData =
+    resolveHexPayload({
+      description: 'threshold committee runtime payload',
+      directOption: 'runtime-data',
+      fieldName: 'runtimeData',
+      fileOption: 'runtime-file',
+      options,
+    }) ?? (await buildThresholdRuntimePayload(options)).runtimeData;
+  const policy = await publicClient.readContract({
+    address: policyVault,
+    abi: POLICY_VAULT_ABI,
+    functionName: 'getPolicy',
+    args: [policyId],
+  });
+  let validated = true;
+  let validationError = null;
+  try {
+    await publicClient.readContract({
+      address: evaluator,
+      abi: THRESHOLD_COMMITTEE_CONDITION_ABI,
+      functionName: 'validateCondition',
+      args: [policyVault, policy.provider, policy.datasetId, configData],
+    });
+  } catch (error) {
+    validated = false;
+    validationError = error instanceof Error ? error.message : `${error}`;
+  }
+  let purchaseAllowed = false;
+  let purchaseAllowedError = null;
+  try {
+    purchaseAllowed = await publicClient.readContract({
+      address: evaluator,
+      abi: THRESHOLD_COMMITTEE_CONDITION_ABI,
+      functionName: 'isPurchaseAllowed',
+      args: [policyVault, policyId, buyer, recipient, configData, runtimeData],
+    });
+  } catch (error) {
+    purchaseAllowedError = error instanceof Error ? error.message : `${error}`;
+  }
+  const version = await publicClient.readContract({
+    address: evaluator,
+    abi: THRESHOLD_COMMITTEE_CONDITION_ABI,
+    functionName: 'version',
+  });
+  const payload = {
+    buyer,
+    configData,
+    evaluator,
+    network: chain.name,
+    policyId,
+    policyVault,
+    provider: policy.provider,
+    datasetId: policy.datasetId,
+    purchaseAllowed,
+    purchaseAllowedError,
+    recipient,
+    runtimeData,
+    validated,
+    validationError,
+    version,
+  };
+  if (CLI_RUNTIME.json) {
+    emitResult('threshold-committee-check', payload);
+    return;
+  }
+  printHeading('Threshold Committee Check');
+  printField('Network', payload.network);
+  printField('Evaluator', payload.evaluator);
+  printField('Version', payload.version);
+  printField('Policy', payload.policyId);
+  printField('Dataset', payload.datasetId);
+  printField('Provider', payload.provider);
+  printField('Buyer', payload.buyer);
+  printField('Recipient', payload.recipient);
+  printField('Validated', payload.validated);
+  if (payload.validationError) {
+    printField('Validate error', payload.validationError);
+  }
+  printField('Allowed', payload.purchaseAllowed);
+  if (payload.purchaseAllowedError) {
+    printField('Allow error', payload.purchaseAllowedError);
+  }
 }
